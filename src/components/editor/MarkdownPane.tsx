@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from "react";
 import { SlideData } from "../../types";
 import { parseMarkdownToSlides, slidesToMarkdown } from "../../utils/markdownParser";
 import { useSlideContext } from "../../context/SlideContext";
@@ -33,11 +33,88 @@ export const MarkdownPane: React.FC<MarkdownPaneProps> = ({
   const [isFocused, setIsFocused] = useState<boolean>(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lineGutterRef = useRef<HTMLDivElement>(null);
+  const mirrorRef = useRef<HTMLDivElement>(null);
   const [activeLine, setActiveLine] = useState<number>(1);
+  const [lineHeights, setLineHeights] = useState<number[]>([24]);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [statusMessage, setStatusMessage] = useState<string>("");
   const [statusType, setStatusType] = useState<"info" | "warning" | "error">("info");
 
+  const lines = useMemo(
+    () => (rawMarkdown ? rawMarkdown.split("\n") : [""]),
+    [rawMarkdown]
+  );
+
+  // Measure the exact rendered visual height of each logical line (including soft wraps)
+  const measureLineHeights = useCallback(() => {
+    const ta = textareaRef.current;
+    const mirror = mirrorRef.current;
+    if (!ta || !mirror) return;
+
+    const cs = window.getComputedStyle(ta);
+    const baseLineHeight = parseFloat(cs.lineHeight) || 24;
+
+    mirror.style.width = `${ta.clientWidth}px`;
+    mirror.style.fontFamily = cs.fontFamily;
+    mirror.style.fontSize = cs.fontSize;
+    mirror.style.fontWeight = cs.fontWeight;
+    mirror.style.fontStyle = cs.fontStyle;
+    mirror.style.lineHeight = cs.lineHeight;
+    mirror.style.letterSpacing = cs.letterSpacing;
+    mirror.style.fontFeatureSettings = cs.fontFeatureSettings;
+    mirror.style.tabSize = cs.tabSize;
+    mirror.style.paddingLeft = cs.paddingLeft;
+    mirror.style.paddingRight = cs.paddingRight;
+    mirror.style.wordBreak = cs.wordBreak;
+    mirror.style.overflowWrap = cs.overflowWrap || "break-word";
+
+    const nextHeights: number[] = [];
+    const children = mirror.children;
+    for (let i = 0; i < children.length; i++) {
+      const rect = (children[i] as HTMLElement).getBoundingClientRect();
+      nextHeights.push(Math.max(baseLineHeight, rect.height));
+    }
+
+    setLineHeights((prev) => {
+      if (
+        prev.length === nextHeights.length &&
+        prev.every((h, idx) => Math.abs(h - nextHeights[idx]) < 0.1)
+      ) {
+        return prev;
+      }
+      return nextHeights;
+    });
+
+    if (lineGutterRef.current) {
+      lineGutterRef.current.scrollTop = ta.scrollTop;
+    }
+  }, []);
+
+  useLayoutEffect(() => {
+    measureLineHeights();
+  }, [lines, measureLineHeights]);
+
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+
+    const observer = new ResizeObserver(() => {
+      measureLineHeights();
+    });
+    observer.observe(ta);
+
+    let cancelled = false;
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(() => {
+        if (!cancelled) measureLineHeights();
+      });
+    }
+
+    return () => {
+      cancelled = true;
+      observer.disconnect();
+    };
+  }, [measureLineHeights]);
 
   // Sync slides into rawMarkdown when not actively focused
   useEffect(() => {
@@ -131,10 +208,12 @@ export const MarkdownPane: React.FC<MarkdownPaneProps> = ({
       const lineNum = textBefore.split("\n").length;
       setActiveLine(lineNum);
 
-      // Scroll textarea smoothly without stealing focus from the slide canvas
-      const lineOffsetHeight = 24;
-      const estimatedScrollTop = (lineNum - 4) * lineOffsetHeight;
-      ta.scrollTop = Math.max(0, estimatedScrollTop);
+      // Compute exact Y-offset accounting for wrapped line heights
+      let yOffset = 0;
+      for (let i = 0; i < lineNum - 1 && i < lineHeights.length; i++) {
+        yOffset += lineHeights[i] ?? 24;
+      }
+      ta.scrollTop = Math.max(0, yOffset - 72);
       if (lineGutterRef.current) {
         lineGutterRef.current.scrollTop = ta.scrollTop;
       }
@@ -144,7 +223,7 @@ export const MarkdownPane: React.FC<MarkdownPaneProps> = ({
         ta.setSelectionRange(globalIndex, globalIndex + 1);
       }
     }
-  }, [highlightedField, activeSlideIndex]);
+  }, [highlightedField, activeSlideIndex, isFocused, lineHeights]);
 
   const syncCursorPosition = useCallback((ta: HTMLTextAreaElement | null) => {
     if (!ta) return;
@@ -158,12 +237,17 @@ export const MarkdownPane: React.FC<MarkdownPaneProps> = ({
       onSelectSlide(targetIdx);
     }
 
-    // Gutter active line highlight
+    // Gutter active line highlight (1-indexed logical line)
     const currentLineNum = textBefore.split("\n").length;
     setActiveLine(currentLineNum);
 
-    // Bidirectional canvas highlighting sync
-    const currentLineText = textBefore.split("\n").pop() || "";
+    if (lineGutterRef.current) {
+      lineGutterRef.current.scrollTop = ta.scrollTop;
+    }
+
+    // Bidirectional canvas highlighting sync using the full logical line
+    const allLines = ta.value.split("\n");
+    const currentLineText = allLines[currentLineNum - 1] ?? (textBefore.split("\n").pop() || "");
     let field: string | null = null;
     if (currentLineText.trim().startsWith("# ")) {
       field = "title";
@@ -190,10 +274,10 @@ export const MarkdownPane: React.FC<MarkdownPaneProps> = ({
   const handleGutterLineClick = (lineNum: number) => {
     if (!textareaRef.current) return;
     const ta = textareaRef.current;
-    const lines = ta.value.split("\n");
+    const docLines = ta.value.split("\n");
     let charIndex = 0;
-    for (let i = 0; i < lineNum - 1 && i < lines.length; i++) {
-      charIndex += lines[i].length + 1;
+    for (let i = 0; i < lineNum - 1 && i < docLines.length; i++) {
+      charIndex += docLines[i].length + 1;
     }
     ta.focus();
     ta.setSelectionRange(charIndex, charIndex);
@@ -244,31 +328,46 @@ export const MarkdownPane: React.FC<MarkdownPaneProps> = ({
     }
   };
 
-  const lineCount = rawMarkdown.split("\n").length || 1;
-
   return (
     <>
-      {/* Notion-like Raw Textarea Editor with Inline Bubble Menu and Line Gutter */}
+      {/* Notion-like Raw Textarea Editor with Wrapped-Line-Synced Gutter */}
       <div className="flex-1 flex flex-col p-3.5 overflow-hidden relative bg-transparent">
         <div className="flex-1 flex overflow-hidden relative bg-[#0e1117]/60 border border-white/[0.08] rounded-lg">
+          {/* Hidden mirror container matching textarea typography & clientWidth for exact soft-wrap height measurement */}
+          <div
+            ref={mirrorRef}
+            aria-hidden="true"
+            className="absolute top-0 left-0 invisible pointer-events-none -z-10 box-border whitespace-pre-wrap break-words"
+          >
+            {lines.map((line, idx) => (
+              <div key={idx}>{line.length > 0 ? line : "\u200b"}</div>
+            ))}
+          </div>
+
           {/* Line Numbers Gutter */}
           <div
             ref={lineGutterRef}
-            className="w-10 shrink-0 bg-transparent border-r border-white/[0.06] py-3 text-right pr-2 select-none text-[10px] text-slate-500 font-mono overflow-hidden h-full"
+            className="w-10 shrink-0 bg-transparent border-r border-white/[0.06] py-3 text-right select-none text-[10px] text-slate-500 font-mono overflow-hidden h-full"
           >
-            {Array.from({ length: lineCount }, (_, i) => i + 1).map((num) => (
-              <div
-                key={num}
-                onClick={() => handleGutterLineClick(num)}
-                className={`h-6 flex items-center justify-end font-semibold cursor-pointer select-none ${
-                  num === activeLine
-                    ? "text-blue-400 bg-blue-500/10 font-bold border-r-2 border-blue-500 -mr-[9px] pr-[7px]"
-                    : "hover:text-slate-400"
-                }`}
-              >
-                {num}
-              </div>
-            ))}
+            {lines.map((_, idx) => {
+              const num = idx + 1;
+              const rowHeight = lineHeights[idx] ?? 24;
+              const isActive = num === activeLine;
+              return (
+                <div
+                  key={num}
+                  onClick={() => handleGutterLineClick(num)}
+                  style={{ height: `${rowHeight}px` }}
+                  className={`w-full pr-1.5 flex items-start justify-end font-semibold cursor-pointer select-none box-border border-r-2 ${
+                    isActive
+                      ? "text-sky-400 bg-sky-500/10 font-bold border-sky-400"
+                      : "border-transparent hover:text-slate-300"
+                  }`}
+                >
+                  <span className="h-6 flex items-center leading-6">{num}</span>
+                </div>
+              );
+            })}
           </div>
 
           <textarea
@@ -280,20 +379,20 @@ export const MarkdownPane: React.FC<MarkdownPaneProps> = ({
             }}
             onSelect={(e) => syncCursorPosition(e.currentTarget)}
             onKeyDown={() => {
-              setTimeout(() => {
+              requestAnimationFrame(() => {
                 if (textareaRef.current) {
                   syncCursorPosition(textareaRef.current);
                 }
-              }, 0);
+              });
             }}
             onKeyUp={(e) => syncCursorPosition(e.currentTarget)}
             onClick={(e) => syncCursorPosition(e.currentTarget)}
             onMouseDown={() => {
-              setTimeout(() => {
+              requestAnimationFrame(() => {
                 if (textareaRef.current) {
                   syncCursorPosition(textareaRef.current);
                 }
-              }, 0);
+              });
             }}
             onMouseUp={(e) => syncCursorPosition(e.currentTarget)}
             onScroll={(e) => {
@@ -330,7 +429,7 @@ export const MarkdownPane: React.FC<MarkdownPaneProps> = ({
               }
             }}
             placeholder={`# Slide Title\n## Subtitle description\n- Bullet point 1\n- Bullet point 2\n\n---\n\n# Next Slide Title...`}
-            className="flex-1 w-full bg-transparent p-3 pl-3 text-xs text-slate-200 font-mono leading-6 resize-none custom-scrollbar focus:outline-none"
+            className="flex-1 w-full bg-transparent p-3 pl-3 text-xs text-slate-200 font-mono leading-6 whitespace-pre-wrap break-words overflow-x-hidden overflow-y-auto resize-none custom-scrollbar [scroll-behavior:auto] focus:outline-none"
             spellCheck={false}
           />
         </div>
