@@ -10,7 +10,7 @@ import { FullImageLayout } from "./canvas/FullImageLayout";
 import { SlideFrameHeader } from "./canvas/SlideFrameHeader";
 import { SlideFrameFooter } from "./canvas/SlideFrameFooter";
 import { CanvasOverlays } from "./canvas/CanvasOverlays";
-import { FreeFormOverlay } from "./canvas/FreeFormOverlay";
+import { FreeFormOverlay, ConnectorDraftProp } from "./canvas/FreeFormOverlay";
 import { LayoutDispatcher } from "./canvas/layouts/LayoutDispatcher";
 import { useCanvasInteractions } from "./canvas/hooks/useCanvasInteractions";
 import { polishElementWithAi } from "../utils/api";
@@ -34,6 +34,8 @@ interface SlideCanvasProps {
   onLanguageChange?: (lang: Language) => void;
   selectedOverlayId?: string | null;
   onSelectOverlayId?: (id: string | null) => void;
+  connectorDraft?: ConnectorDraftProp | null;
+  onSetConnectorDraft?: React.Dispatch<React.SetStateAction<ConnectorDraftProp | null>>;
 }
 
 export const SlideCanvas: React.FC<SlideCanvasProps> = ({
@@ -53,6 +55,8 @@ export const SlideCanvas: React.FC<SlideCanvasProps> = ({
   onLanguageChange,
   selectedOverlayId,
   onSelectOverlayId,
+  connectorDraft,
+  onSetConnectorDraft,
 }) => {
   const canvasRef = React.useRef<HTMLDivElement>(null);
   const collab = useCollabContext();
@@ -349,6 +353,9 @@ export const SlideCanvas: React.FC<SlideCanvasProps> = ({
       onMouseMove={handleCanvasMouseMove}
       onPointerDown={(e) => {
         if (!(e.target as HTMLElement).closest("[data-overlay-id]")) {
+          if (connectorDraft?.active && onSetConnectorDraft) {
+            onSetConnectorDraft(null);
+          }
           if (interactions.selectedOverlayId) {
             interactions.setSelectedOverlayId(null);
           }
@@ -546,6 +553,23 @@ export const SlideCanvas: React.FC<SlideCanvasProps> = ({
           activeSnapGuides={interactions.activeSnapGuides}
           isManipulatingOverlay={interactions.isManipulatingOverlay}
           liveRotationAngle={interactions.liveRotationAngle}
+          connectorDraft={connectorDraft}
+          onConnectorNodeClick={(elementId) => {
+            if (!connectorDraft?.active || !onSetConnectorDraft) return;
+            if (!connectorDraft.sourceId) {
+              onSetConnectorDraft({ ...connectorDraft, sourceId: elementId });
+            } else if (connectorDraft.sourceId === elementId) {
+              onSetConnectorDraft({ ...connectorDraft, sourceId: null });
+            } else {
+              interactions.createSmartConnector(
+                connectorDraft.sourceId,
+                elementId,
+                connectorDraft.connectorType,
+                theme.accentColor || "#3b82f6"
+              );
+              onSetConnectorDraft(null);
+            }
+          }}
           onSelectOverlay={interactions.setSelectedOverlayId}
           onStartEditOverlay={interactions.setEditingOverlayId}
           onStartDrag={interactions.startOverlayDrag}
@@ -553,6 +577,7 @@ export const SlideCanvas: React.FC<SlideCanvasProps> = ({
           onStartRotate={interactions.startOverlayRotate}
           onUpdateContent={interactions.updateOverlayContent}
           onUpdateStyle={interactions.updateOverlayStyle}
+          onUpdateConnector={interactions.updateOverlayConnector}
           onBringToFront={interactions.bringOverlayToFront}
           onSendToBack={interactions.sendOverlayToBack}
           onBringForward={interactions.bringOverlayForward}

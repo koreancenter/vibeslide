@@ -118,9 +118,38 @@ export interface SlideImage {
   shadow?: boolean;
 }
 
-export type CanvasElementType = "text" | "image" | "shape";
+export type CanvasElementType = "text" | "image" | "shape" | "icon" | "connector";
 
-export type CanvasShapeVariant = "rectangle" | "rounded" | "circle" | "pill" | "line";
+export type CanvasShapeVariant =
+  | "rectangle"
+  | "rounded"
+  | "circle"
+  | "pill"
+  | "line"
+  | "triangle"
+  | "diamond"
+  | "callout"
+  | "arrow-right"
+  | "arrow-left"
+  | "arrow-up"
+  | "arrow-down"
+  | "arrow-bidirectional";
+
+export type CanvasShapeStylePreset = "solid" | "outline" | "glass" | "shadow";
+
+export type CanvasConnectorType = "straight" | "elbow";
+
+export type CanvasAnchorSide = "auto" | "top" | "right" | "bottom" | "left";
+
+export interface CanvasConnectorData {
+  sourceId: string;
+  targetId: string;
+  connectorType: CanvasConnectorType;
+  arrowStart?: boolean;
+  arrowEnd?: boolean;
+  sourceAnchor?: CanvasAnchorSide;
+  targetAnchor?: CanvasAnchorSide;
+}
 
 export interface CanvasElementStyle {
   backgroundColor?: string;
@@ -133,8 +162,12 @@ export interface CanvasElementStyle {
   textAlign?: "left" | "center" | "right";
   opacity?: number;
   shapeVariant?: CanvasShapeVariant;
+  shapePreset?: CanvasShapeStylePreset;
   objectFit?: "cover" | "contain";
   boxShadow?: string;
+  backdropFilter?: string;
+  strokeWidth?: number;
+  iconName?: string;
 }
 
 export interface CanvasElement {
@@ -148,6 +181,7 @@ export interface CanvasElement {
   zIndex: number;
   content: string;
   style: CanvasElementStyle;
+  connector?: CanvasConnectorData;
 }
 
 export interface SlideData {

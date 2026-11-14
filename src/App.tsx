@@ -275,6 +275,8 @@ function AppWorkspace() {
                   onLanguageChange={slideCtx.setLanguage}
                   selectedOverlayId={slideCtx.selectedOverlayId}
                   onSelectOverlayId={slideCtx.setSelectedOverlayId}
+                  connectorDraft={slideCtx.connectorDraft}
+                  onSetConnectorDraft={slideCtx.setConnectorDraft}
                 />
               )}
             </div>

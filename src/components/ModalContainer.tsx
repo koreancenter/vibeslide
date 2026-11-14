@@ -49,6 +49,9 @@ const WebPublishModal = React.lazy(() =>
 const TimelineAnimationModal = React.lazy(() =>
   import("./TimelineAnimationModal").then((m) => ({ default: m.TimelineAnimationModal }))
 );
+const IconStudioModal = React.lazy(() =>
+  import("./IconStudioModal").then((m) => ({ default: m.IconStudioModal }))
+);
 
 export const ModalContainer: React.FC = () => {
   const slideCtx = useSlideContext();
@@ -231,6 +234,14 @@ export const ModalContainer: React.FC = () => {
         <TimelineAnimationModal
           isOpen={isModalOpen("timelineAnimation")}
           onClose={() => closeModal("timelineAnimation")}
+        />
+      )}
+
+      {/* Modal: Searchable Vector Icon Asset Studio */}
+      {isModalOpen("iconStudio") && (
+        <IconStudioModal
+          isOpen={isModalOpen("iconStudio")}
+          onClose={() => closeModal("iconStudio")}
         />
       )}
 

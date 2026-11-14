@@ -9,6 +9,7 @@ import {
   SlideImage,
   RagPatchSuggestion,
   DesignConstitution,
+  CanvasConnectorType,
 } from "../types";
 import { loadDesignConstitution, saveDesignConstitution } from "../utils/constitution";
 import { INITIAL_SLIDES } from "../data/initialSlides";
@@ -116,6 +117,18 @@ export interface SlideContextType {
   setHighlightedField: (field: string | null) => void;
   selectedOverlayId: string | null;
   setSelectedOverlayId: (id: string | null) => void;
+  connectorDraft: {
+    active: boolean;
+    connectorType: CanvasConnectorType;
+    sourceId: string | null;
+  } | null;
+  setConnectorDraft: React.Dispatch<
+    React.SetStateAction<{
+      active: boolean;
+      connectorType: CanvasConnectorType;
+      sourceId: string | null;
+    } | null>
+  >;
   hoverTransition: SlideTransition | null;
   setHoverTransition: (t: SlideTransition | null) => void;
 
@@ -219,6 +232,11 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const viewportContainerRef = useRef<HTMLDivElement | null>(null);
   const [highlightedField, setHighlightedField] = useState<string | null>(null);
   const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
+  const [connectorDraft, setConnectorDraft] = useState<{
+    active: boolean;
+    connectorType: CanvasConnectorType;
+    sourceId: string | null;
+  } | null>(null);
   const [hoverTransition, setHoverTransition] = useState<SlideTransition | null>(null);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -269,6 +287,7 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   useEffect(() => {
     setSelectedOverlayId(null);
+    setConnectorDraft(null);
   }, [activeSlide?.id]);
 
   const triggerToast = useCallback((msg: string) => {
@@ -428,16 +447,29 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     (index: number) => {
       const source = slides[index];
       if (!source) return;
+      const idMap = new Map<string, string>();
+      const baseTs = Date.now();
+      const rawElements = source.overlayElements || [];
+      rawElements.forEach((el, idx) => {
+        idMap.set(el.id, `ov_${baseTs}_${idx}_${Math.random().toString(36).slice(2, 6)}`);
+      });
       const duplicated: SlideData = {
         ...source,
-        id: `slide_${Date.now()}`,
+        id: `slide_${baseTs}`,
         titleKo: `${source.titleKo} (복사본)`,
         titleId: `${source.titleId} (Salinan)`,
         overlayElements: source.overlayElements
-          ? source.overlayElements.map((el, idx) => ({
+          ? source.overlayElements.map((el) => ({
               ...el,
-              id: `ov_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+              id: idMap.get(el.id) || el.id,
               style: { ...el.style },
+              connector: el.connector
+                ? {
+                    ...el.connector,
+                    sourceId: idMap.get(el.connector.sourceId) || el.connector.sourceId,
+                    targetId: idMap.get(el.connector.targetId) || el.connector.targetId,
+                  }
+                : undefined,
             }))
           : undefined,
       };
@@ -953,6 +985,8 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setHighlightedField,
     selectedOverlayId,
     setSelectedOverlayId,
+    connectorDraft,
+    setConnectorDraft,
     hoverTransition,
     setHoverTransition,
     saveStatus,

@@ -1,3 +1,5 @@
+import React from "react";
+import { renderToStaticMarkup } from "react-dom/server";
 import PptxGenJS from "pptxgenjs";
 import {
   CanvasElement,
@@ -8,6 +10,12 @@ import {
 import { getAccessibleTheme, isLightBackground, parseColor } from "./luminosity";
 import { getJapaneseFallbackText } from "./translationDictionary";
 import { isSafeImageUrl } from "./security";
+import { getLucideIconComponent } from "../data/iconRegistry";
+import {
+  SVG_VIEWBOX_H,
+  SVG_VIEWBOX_W,
+  computeConnectorGeometry,
+} from "../components/canvas/shapeRenderUtils";
 
 export interface ExportPptxOptions {
   slides: SlideData[];
@@ -604,15 +612,16 @@ async function renderOverlayElements(
       ? { color: fillParsed.color, transparency: combineTransparency(fillParsed.transparency) }
       : { type: "none" };
 
-    const hasBorder = (el.style?.borderWidth ?? 0) > 0 && el.style?.borderColor;
-    const borderParsed = hasBorder ? toPptxColor(el.style.borderColor, "94A3B8") : null;
-    const lineOpt: PptxGenJS.ShapeLineProps | undefined = borderParsed
-      ? {
-          color: borderParsed.color,
-          width: Math.max(0.5, (el.style.borderWidth || 1) * 0.75),
-          transparency: combineTransparency(borderParsed.transparency),
-        }
-      : { type: "none" };
+      const effectiveStrokeW = el.style?.strokeWidth ?? el.style?.borderWidth ?? 0;
+      const hasBorder = effectiveStrokeW > 0 && el.style?.borderColor;
+      const borderParsed = hasBorder ? toPptxColor(el.style.borderColor, "94A3B8") : null;
+      const lineOpt: PptxGenJS.ShapeLineProps | undefined = borderParsed
+        ? {
+            color: borderParsed.color,
+            width: Math.max(0.5, effectiveStrokeW * 0.75),
+            transparency: combineTransparency(borderParsed.transparency),
+          }
+        : { type: "none" };
 
     if (el.type === "text") {
       const textParsed = toPptxColor(el.style?.color, "F8FAFC");
@@ -669,18 +678,169 @@ async function renderOverlayElements(
         } else if (variant === "rounded") {
           shapeType = pptx.ShapeType.roundRect;
           rectRadius = Math.min(0.45, (el.style?.borderRadius ?? 12) / 60);
+        } else if (variant === "triangle") {
+          shapeType = pptx.ShapeType.triangle;
+        } else if (variant === "diamond") {
+          shapeType = pptx.ShapeType.diamond;
+        } else if (variant === "callout") {
+          shapeType = pptx.ShapeType.wedgeRoundRectCallout;
+        } else if (variant === "arrow-right") {
+          shapeType = pptx.ShapeType.rightArrow;
+        } else if (variant === "arrow-left") {
+          shapeType = pptx.ShapeType.leftArrow;
+        } else if (variant === "arrow-up") {
+          shapeType = pptx.ShapeType.upArrow;
+        } else if (variant === "arrow-down") {
+          shapeType = pptx.ShapeType.downArrow;
+        } else if (variant === "arrow-bidirectional") {
+          shapeType = pptx.ShapeType.leftRightArrow;
         }
 
-        pptxSlide.addShape(shapeType, {
+        const labelText = (el.content || "").trim();
+        if (labelText) {
+          const textParsed = toPptxColor(el.style?.color, "FFFFFF");
+          const fontSize = Math.max(7, Math.round((el.style?.fontSize || 14) * PX_TO_PT));
+          pptxSlide.addText(labelText, {
+            x,
+            y,
+            w,
+            h,
+            shape: shapeType,
+            rectRadius,
+            fill: fillOpt,
+            line: lineOpt,
+            rotate,
+            fontFace,
+            fontSize,
+            bold: true,
+            color: textParsed.color,
+            transparency: combineTransparency(textParsed.transparency),
+            align: el.style?.textAlign || "center",
+            valign: "middle",
+            wrap: true,
+            margin: 4,
+          });
+        } else {
+          pptxSlide.addShape(shapeType, {
+            x,
+            y,
+            w,
+            h,
+            rotate,
+            rectRadius,
+            fill: fillOpt,
+            line: lineOpt,
+          });
+        }
+      }
+    } else if (el.type === "icon") {
+      const IconComp = getLucideIconComponent(el.style?.iconName || el.content);
+      const iconHex = el.style?.color || "#3B82F6";
+      const iconStroke = el.style?.strokeWidth || 2;
+      try {
+        const svgMarkup = renderToStaticMarkup(
+          React.createElement(IconComp, {
+            xmlns: "http://www.w3.org/2000/svg",
+            width: 256,
+            height: 256,
+            color: iconHex,
+            strokeWidth: iconStroke,
+          })
+        );
+        const svgDataUrl = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svgMarkup)}`;
+        const pngUri = await rasterizeImageToPng(svgDataUrl);
+        if (pngUri) {
+          pptxSlide.addImage({
+            data: pngUri,
+            x,
+            y,
+            w,
+            h,
+            rotate,
+            transparency:
+              baseOpacity < 0.995
+                ? Math.max(0, Math.min(99, Math.round((1 - baseOpacity) * 100)))
+                : undefined,
+            sizing: { type: "contain", w, h },
+          });
+        }
+      } catch {
+        // Fallback badge shape if SVG serialization fails
+        pptxSlide.addShape(pptx.ShapeType.ellipse, {
           x,
           y,
           w,
           h,
-          rotate,
-          rectRadius,
-          fill: fillOpt,
-          line: lineOpt,
+          fill: { color: toSolidHex(iconHex, "3B82F6"), transparency: 25 },
+          line: { color: toSolidHex(iconHex, "3B82F6"), width: 1.5 },
         });
+      }
+    } else if (el.type === "connector") {
+      const geom = computeConnectorGeometry(el, elements);
+      const cParsed = toPptxColor(el.style?.borderColor || el.style?.color || "#3B82F6", "3B82F6");
+      const cWidthPt = Math.max(1, (el.style?.strokeWidth || 3) * 0.75);
+      const toInX = (vx: number) => (vx / SVG_VIEWBOX_W) * SLIDE_W;
+      const toInY = (vy: number) => (vy / SVG_VIEWBOX_H) * SLIDE_H;
+
+      const addSegment = (
+        ax: number,
+        ay: number,
+        bx: number,
+        by: number,
+        startArrow: boolean,
+        endArrow: boolean
+      ) => {
+        const sx = Math.min(ax, bx);
+        const sy = Math.min(ay, by);
+        const sw = Math.max(0.01, Math.abs(bx - ax));
+        const sh = Math.max(0.01, Math.abs(by - ay));
+        pptxSlide.addShape(pptx.ShapeType.line, {
+          x: sx,
+          y: sy,
+          w: sw,
+          h: sh,
+          flipH: bx < ax,
+          flipV: by < ay,
+          line: {
+            color: cParsed.color,
+            width: cWidthPt,
+            transparency: combineTransparency(cParsed.transparency),
+            beginArrowType: startArrow ? "triangle" : "none",
+            endArrowType: endArrow ? "triangle" : "none",
+          },
+        });
+      };
+
+      const hasStart = Boolean(el.connector?.arrowStart);
+      const hasEnd = el.connector?.arrowEnd ?? true;
+      const ix1 = toInX(geom.x1);
+      const iy1 = toInY(geom.y1);
+      const ix2 = toInX(geom.x2);
+      const iy2 = toInY(geom.y2);
+
+      if (geom.connectorType === "straight") {
+        addSegment(ix1, iy1, ix2, iy2, hasStart, hasEnd);
+      } else {
+        // Parse elbow polyline vertices from SVG pathD
+        const nums = geom.pathD.match(/-?[0-9]*\.?[0-9]+/g)?.map(Number) || [];
+        const pts: { x: number; y: number }[] = [];
+        for (let idx = 0; idx + 1 < nums.length; idx += 2) {
+          pts.push({ x: toInX(nums[idx]), y: toInY(nums[idx + 1]) });
+        }
+        if (pts.length >= 2) {
+          for (let segIdx = 0; segIdx < pts.length - 1; segIdx++) {
+            addSegment(
+              pts[segIdx].x,
+              pts[segIdx].y,
+              pts[segIdx + 1].x,
+              pts[segIdx + 1].y,
+              segIdx === 0 && hasStart,
+              segIdx === pts.length - 2 && hasEnd
+            );
+          }
+        } else {
+          addSegment(ix1, iy1, ix2, iy2, hasStart, hasEnd);
+        }
       }
     } else if (el.type === "image") {
       const dataUri = await loadImageAsDataUri(el.content);

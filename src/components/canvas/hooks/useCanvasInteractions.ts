@@ -1,5 +1,11 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
-import { CanvasElement, CanvasElementStyle, SlideData } from "../../../types";
+import {
+  CanvasConnectorData,
+  CanvasConnectorType,
+  CanvasElement,
+  CanvasElementStyle,
+  SlideData,
+} from "../../../types";
 import { INITIAL_SLIDES } from "../../../data/initialSlides";
 
 export type ResizeHandle = "nw" | "n" | "ne" | "e" | "se" | "s" | "sw" | "w";
@@ -977,6 +983,78 @@ export function useCanvasInteractions({
     [commitOverlayElements]
   );
 
+  const updateOverlayConnector = useCallback(
+    (
+      id: string,
+      connectorPatch: Partial<CanvasConnectorData>,
+      actionName = "Update Smart Connector"
+    ) => {
+      const current = slideRef.current.overlayElements || [];
+      const next = current.map((el) => {
+        if (el.id !== id || !el.connector) return el;
+        return {
+          ...el,
+          connector: { ...el.connector, ...connectorPatch },
+        };
+      });
+      commitOverlayElements(next, actionName, true);
+    },
+    [commitOverlayElements]
+  );
+
+  const createSmartConnector = useCallback(
+    (
+      sourceId: string,
+      targetId: string,
+      connectorType: CanvasConnectorType,
+      accentColor = "#3b82f6"
+    ): string | null => {
+      if (!sourceId || !targetId || sourceId === targetId) return null;
+      const current = slideRef.current.overlayElements || [];
+      const src = current.find((el) => el.id === sourceId);
+      const tgt = current.find((el) => el.id === targetId);
+      if (!src || !tgt) return null;
+
+      const minX = Math.min(src.x, tgt.x);
+      const minY = Math.min(src.y, tgt.y);
+      const maxX = Math.max(src.x + src.width, tgt.x + tgt.width);
+      const maxY = Math.max(src.y + src.height, tgt.y + tgt.height);
+      const maxZ = current.reduce((m, el) => Math.max(m, el.zIndex), 0);
+
+      const newConnector: CanvasElement = {
+        id: `ov_con_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
+        type: "connector",
+        x: roundPct(minX),
+        y: roundPct(minY),
+        width: roundPct(Math.max(2, maxX - minX)),
+        height: roundPct(Math.max(2, maxY - minY)),
+        rotation: 0,
+        zIndex: maxZ + 1,
+        content: "",
+        style: {
+          borderColor: accentColor,
+          strokeWidth: 3,
+          opacity: 1,
+        },
+        connector: {
+          sourceId,
+          targetId,
+          connectorType,
+          arrowStart: false,
+          arrowEnd: true,
+          sourceAnchor: "auto",
+          targetAnchor: "auto",
+        },
+      };
+
+      const next = normalizeZOrder([...current, newConnector]);
+      commitOverlayElements(next, `Add Smart Connector (${connectorType})`, true);
+      setSelectedOverlayId(newConnector.id);
+      return newConnector.id;
+    },
+    [commitOverlayElements, setSelectedOverlayId]
+  );
+
   // Layering actions
   const bringOverlayToFront = useCallback(
     (id: string) => {
@@ -1091,7 +1169,14 @@ export function useCanvasInteractions({
   const deleteOverlayElement = useCallback(
     (id: string) => {
       const current = slideRef.current.overlayElements || [];
-      const next = normalizeZOrder(current.filter((el) => el.id !== id));
+      const next = normalizeZOrder(
+        current.filter(
+          (el) =>
+            el.id !== id &&
+            el.connector?.sourceId !== id &&
+            el.connector?.targetId !== id
+        )
+      );
       commitOverlayElements(next, "Delete Overlay Element", true);
       if (selectedOverlayId === id) {
         setSelectedOverlayId(null);
@@ -1157,6 +1242,8 @@ export function useCanvasInteractions({
     startOverlayRotate,
     updateOverlayContent,
     updateOverlayStyle,
+    updateOverlayConnector,
+    createSmartConnector,
     bringOverlayToFront,
     sendOverlayToBack,
     bringOverlayForward,
