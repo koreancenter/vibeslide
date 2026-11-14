@@ -23,6 +23,7 @@ import {
   PresenterCommandAction,
   PresenterSyncMessage,
 } from "../utils/presenterChannel";
+import { buildSlideAnimationSchedule } from "../utils/componentAnimation";
 
 interface ScaledSlideFrameProps {
   slide: SlideData;
@@ -333,8 +334,10 @@ export const PresenterView: React.FC<PresenterViewProps> = ({
 
   const currentSlide = slides[currentIndex] || slides[0];
   const nextSlide = currentIndex < slides.length - 1 ? slides[currentIndex + 1] : null;
-  const totalBuildInItems =
-    currentSlide?.bullets?.length || currentSlide?.stats?.length || 0;
+  const totalBuildInItems = useMemo(
+    () => buildSlideAnimationSchedule(currentSlide, language).totalSteps,
+    [currentSlide, language]
+  );
   const slideBuildInActive =
     buildInEnabled && currentSlide?.buildInConfig?.enabled !== false && totalBuildInItems > 0;
 

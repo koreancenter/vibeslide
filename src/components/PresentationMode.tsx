@@ -23,6 +23,7 @@ import { SlideData, Language, PresentationTheme, SlideTransition } from "../type
 import { SlideCanvas } from "./SlideCanvas";
 import { PresenterView } from "./PresenterView";
 import { getJapaneseFallbackText } from "../utils/translationDictionary";
+import { buildSlideAnimationSchedule } from "../utils/componentAnimation";
 import {
   createPresenterSenderId,
   openPresenterBroadcastChannel,
@@ -153,8 +154,10 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
   }, [transitionDropdownOpen]);
 
   const currentSlide = slides[currentIndex] || slides[0];
-  const totalBuildInItems =
-    currentSlide?.bullets?.length || currentSlide?.stats?.length || 0;
+  const totalBuildInItems = React.useMemo(
+    () => buildSlideAnimationSchedule(currentSlide, language).totalSteps,
+    [currentSlide, language]
+  );
 
   const [buildInStep, setBuildInStep] = useState<number>(0);
   const [buildInEnabled, setBuildInEnabled] = useState<boolean>(true);

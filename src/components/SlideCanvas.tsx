@@ -544,6 +544,8 @@ export const SlideCanvas: React.FC<SlideCanvasProps> = ({
         {/* Free-Form Canvas Overlay Layer (on top of active preset layout) */}
         <FreeFormOverlay
           elements={slide.overlayElements || []}
+          slide={slide}
+          buildInStep={buildInStep}
           canvasRef={canvasRef}
           theme={theme}
           editable={Boolean(onUpdateSlide)}

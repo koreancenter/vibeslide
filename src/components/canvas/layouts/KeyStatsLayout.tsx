@@ -30,7 +30,13 @@ export const KeyStatsLayout: React.FC<CommonLayoutProps> = ({
         const isActiveDrop = dragOverIndex === sIdx && draggedIndex !== sIdx && draggedType === "stat";
         const isValidDropTarget = draggedType === "stat" && draggedIndex !== sIdx;
         const isSelected = selectedType === "stat" && selectedIndices.includes(sIdx);
-        const buildInState = getBuildInItemState(sIdx, buildInStep, buildInConfig || slide.buildInConfig);
+        const buildInState = getBuildInItemState(
+          sIdx,
+          buildInStep,
+          buildInConfig || slide.buildInConfig,
+          slide,
+          `stat:${sIdx}`
+        );
 
         return (
           <motion.div

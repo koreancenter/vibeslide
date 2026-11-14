@@ -34,7 +34,13 @@ export const ProcessLayout: React.FC<CommonLayoutProps> = ({
         const isActiveDrop = dragOverIndex === bIdx && draggedIndex !== bIdx && draggedType === "bullet";
         const isValidDropTarget = draggedType === "bullet" && draggedIndex !== bIdx;
         const isSelected = selectedType === "bullet" && selectedIndices.includes(bIdx);
-        const buildInState = getBuildInItemState(bIdx, buildInStep, buildInConfig || slide.buildInConfig);
+        const buildInState = getBuildInItemState(
+          bIdx,
+          buildInStep,
+          buildInConfig || slide.buildInConfig,
+          slide,
+          `bullet:${bIdx}`
+        );
 
         return (
           <motion.div

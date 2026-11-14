@@ -38,7 +38,13 @@ export const SplitInfoLayout: React.FC<CommonLayoutProps> = ({
             const bulletTitle = b.titleJa && language === "ja" ? b.titleJa : getText(b.titleKo, b.titleId);
             const bulletDesc = b.descJa && language === "ja" ? b.descJa : getText(b.descKo, b.descId);
             const isSelected = selectedType === "bullet" && selectedIndices.includes(idx);
-            const buildInState = getBuildInItemState(idx, buildInStep, buildInConfig || slide.buildInConfig);
+            const buildInState = getBuildInItemState(
+              idx,
+              buildInStep,
+              buildInConfig || slide.buildInConfig,
+              slide,
+              `bullet:${idx}`
+            );
 
             return (
               <motion.div
@@ -135,11 +141,20 @@ export const SplitInfoLayout: React.FC<CommonLayoutProps> = ({
       </div>
 
       {/* Right Column: Visual Image Asset */}
+      {(() => {
+        const imgBuildIn = getBuildInItemState(
+          (slide.bullets || []).length,
+          buildInStep,
+          buildInConfig || slide.buildInConfig,
+          slide,
+          "image:main"
+        );
+        return (
       <div
-        className={`relative group w-full h-full min-h-[160px] rounded-xl overflow-hidden border shadow-md flex items-end p-3 cursor-pointer transition-all duration-150 ${
+        className={`relative group w-full h-full min-h-[160px] rounded-xl overflow-hidden border shadow-md flex items-end p-3 cursor-pointer transition-all duration-150 ${imgBuildIn.className} ${
           highlightedField === "image" ? "ring-2 ring-blue-500/90" : ""
         }`}
-        style={{ borderColor: theme.borderColor }}
+        style={{ ...imgBuildIn.style, borderColor: theme.borderColor }}
         onClick={() => onCanvasElementClick?.("image")}
         data-collision-zone="static"
       >
@@ -171,6 +186,8 @@ export const SplitInfoLayout: React.FC<CommonLayoutProps> = ({
           {slide.image?.captionKo ? getText(slide.image.captionKo, slide.image.captionId) : "Visual Documentation"}
         </div>
       </div>
+        );
+      })()}
     </div>
   );
 };

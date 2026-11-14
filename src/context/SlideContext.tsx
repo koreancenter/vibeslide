@@ -131,6 +131,10 @@ export interface SlideContextType {
   >;
   hoverTransition: SlideTransition | null;
   setHoverTransition: (t: SlideTransition | null) => void;
+  previewBuildInStep: number | undefined;
+  setPreviewBuildInStep: React.Dispatch<React.SetStateAction<number | undefined>>;
+  isAnimationTimelineOpen: boolean;
+  setIsAnimationTimelineOpen: React.Dispatch<React.SetStateAction<boolean>>;
 
   // Auto-save & Toast
   saveStatus: "saved" | "saving" | "error";
@@ -238,6 +242,8 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     sourceId: string | null;
   } | null>(null);
   const [hoverTransition, setHoverTransition] = useState<SlideTransition | null>(null);
+  const [previewBuildInStep, setPreviewBuildInStep] = useState<number | undefined>(undefined);
+  const [isAnimationTimelineOpen, setIsAnimationTimelineOpen] = useState<boolean>(false);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -288,6 +294,7 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   useEffect(() => {
     setSelectedOverlayId(null);
     setConnectorDraft(null);
+    setPreviewBuildInStep(undefined);
   }, [activeSlide?.id]);
 
   const triggerToast = useCallback((msg: string) => {
@@ -989,6 +996,10 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setConnectorDraft,
     hoverTransition,
     setHoverTransition,
+    previewBuildInStep,
+    setPreviewBuildInStep,
+    isAnimationTimelineOpen,
+    setIsAnimationTimelineOpen,
     saveStatus,
     lastSavedAt,
     toastMessage,

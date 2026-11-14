@@ -56,6 +56,7 @@ export interface BulletItem {
   tagKo?: string;
   tagId?: string;
   tagJa?: string;
+  animation?: ElementAnimationConfig;
 }
 
 export interface DelegateItem {
@@ -92,6 +93,7 @@ export interface ProcessStage {
   descId: string;
   bulletsKo: string[];
   bulletsId: string[];
+  animation?: ElementAnimationConfig;
 }
 
 export interface StatItem {
@@ -105,6 +107,7 @@ export interface StatItem {
   subKo?: string;
   subId?: string;
   subJa?: string;
+  animation?: ElementAnimationConfig;
 }
 
 export interface SlideImage {
@@ -116,6 +119,7 @@ export interface SlideImage {
   aspect?: "16:9" | "4:3" | "1:1" | "cover";
   rounded?: "none" | "sm" | "md" | "lg" | "xl" | "full";
   shadow?: boolean;
+  animation?: ElementAnimationConfig;
 }
 
 export type CanvasElementType = "text" | "image" | "shape" | "icon" | "connector";
@@ -182,6 +186,7 @@ export interface CanvasElement {
   content: string;
   style: CanvasElementStyle;
   connector?: CanvasConnectorData;
+  animation?: ElementAnimationConfig;
 }
 
 export interface SlideData {
@@ -352,6 +357,18 @@ export interface DesignConstitution {
   enabled: boolean;
   rulesText: string; // Consolidated natural language tone & style guidelines
   attachedFileName?: string;
+}
+
+export type ElementAnimationTrigger = "onClick" | "withPrevious" | "afterPrevious";
+
+export type ElementAnimationEffect = "fade" | "slideUp" | "slideLeft" | "zoomIn" | "bounce";
+
+export interface ElementAnimationConfig {
+  trigger: ElementAnimationTrigger;
+  effect: ElementAnimationEffect;
+  duration: number; // ms
+  delay: number; // ms
+  order?: number;
 }
 
 export type ComponentAnimationType = "fade" | "slide-up" | "slide-right" | "zoom-in" | "flip-up";

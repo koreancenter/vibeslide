@@ -7,6 +7,7 @@ import { SlideCanvas } from "./components/SlideCanvas";
 import { SlideEditor } from "./components/SlideEditor";
 import { SlideHorizontalDock } from "./components/SlideHorizontalDock";
 import { CanvasInsertBar } from "./components/canvas/CanvasInsertBar";
+import { AnimationTimeline } from "./components/AnimationTimeline";
 import { ModalContainer } from "./components/ModalContainer";
 import { PresenterView } from "./components/PresenterView";
 import { useResizableSidebar } from "./utils/useResizableSidebar";
@@ -253,7 +254,21 @@ function AppWorkspace() {
             >
               {activeSlide && (
                 <SlideCanvas
-                  slide={activeSlide}
+                  slide={
+                    slideCtx.previewBuildInStep !== undefined &&
+                    activeSlide.buildInConfig?.enabled === false
+                      ? {
+                          ...activeSlide,
+                          buildInConfig: {
+                            animation: "slide-up",
+                            staggerDelay: 0.2,
+                            sequenceMode: "click",
+                            ...activeSlide.buildInConfig,
+                            enabled: true,
+                          },
+                        }
+                      : activeSlide
+                  }
                   language={language}
                   theme={displayedTheme}
                   totalSlides={slides.length}
@@ -266,6 +281,7 @@ function AppWorkspace() {
                     )
                   }
                   highlightedField={highlightedField}
+                  buildInStep={slideCtx.previewBuildInStep}
                   previewTransition={hoverTransition}
                   onCanvasElementClick={(field, idx) => setHighlightedField(idx !== undefined ? `${field}-${idx}` : field)}
                   onUpdateSlide={(updated, pushHistory, actionName) =>
@@ -281,6 +297,9 @@ function AppWorkspace() {
               )}
             </div>
           </div>
+
+          {/* Collapsible Animation Timeline Studio Drawer */}
+          <AnimationTimeline />
 
           {/* Bottom Horizontal Slide Management Dock */}
           <SlideHorizontalDock

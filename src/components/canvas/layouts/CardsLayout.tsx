@@ -52,7 +52,13 @@ export const CardsLayout: React.FC<CommonLayoutProps> = ({
           const isActiveDrop = dragOverIndex === originalIdx && draggedIndex !== originalIdx && draggedType === "bullet";
           const isValidDropTarget = draggedType === "bullet" && draggedIndex !== originalIdx;
           const isSelected = selectedType === "bullet" && selectedIndices.includes(originalIdx);
-          const buildInState = getBuildInItemState(idx, buildInStep, buildInConfig || slide.buildInConfig);
+          const buildInState = getBuildInItemState(
+            idx,
+            buildInStep,
+            buildInConfig || slide.buildInConfig,
+            slide,
+            `bullet:${originalIdx}`
+          );
 
           return (
             <motion.div

@@ -29,9 +29,11 @@ import {
   CanvasElementStyle,
   CanvasShapeStylePreset,
   PresentationTheme,
+  SlideData,
 } from "../../types";
 import { OverlayAlignment, ResizeHandle, SnapGuide } from "./hooks/useCanvasInteractions";
 import { getLucideIconComponent } from "../../data/iconRegistry";
+import { getElementBuildInState } from "../../utils/componentAnimation";
 import {
   SVG_VIEWBOX_H,
   SVG_VIEWBOX_W,
@@ -49,6 +51,8 @@ export interface ConnectorDraftProp {
 
 interface FreeFormOverlayProps {
   elements: CanvasElement[];
+  slide?: SlideData;
+  buildInStep?: number;
   canvasRef: React.RefObject<HTMLDivElement | null>;
   theme: PresentationTheme;
   editable: boolean;
@@ -167,6 +171,8 @@ const OverlayImageContent: React.FC<{ element: CanvasElement }> = ({ element }) 
 
 export const FreeFormOverlay: React.FC<FreeFormOverlayProps> = ({
   elements,
+  slide,
+  buildInStep,
   canvasRef,
   theme,
   editable,
@@ -439,6 +445,10 @@ export const FreeFormOverlay: React.FC<FreeFormOverlayProps> = ({
           const isSelected = editable && !isConnecting && el.id === selectedOverlayId;
           const isEditing = editable && el.id === editingOverlayId;
 
+          const overlayAnim = slide
+            ? getElementBuildInState(`overlay:${el.id}`, slide, buildInStep)
+            : { isVisible: true, style: {}, className: "" };
+
           // --------------------------------------------------------------
           // SMART CONNECTOR ELEMENT
           // --------------------------------------------------------------
@@ -458,10 +468,11 @@ export const FreeFormOverlay: React.FC<FreeFormOverlayProps> = ({
                 <svg
                   viewBox={`0 0 ${SVG_VIEWBOX_W} ${SVG_VIEWBOX_H}`}
                   preserveAspectRatio="none"
-                  className="absolute inset-0 w-full h-full pointer-events-none overflow-visible"
+                  className={`absolute inset-0 w-full h-full pointer-events-none overflow-visible ${overlayAnim.className}`}
                   style={{
+                    ...overlayAnim.style,
                     zIndex: el.zIndex,
-                    opacity: el.style.opacity ?? 1,
+                    opacity: overlayAnim.isVisible ? (el.style.opacity ?? 1) : 0,
                   }}
                 >
                   <defs>
@@ -674,14 +685,14 @@ export const FreeFormOverlay: React.FC<FreeFormOverlayProps> = ({
             >
               {/* Element Content Surface */}
               <div
-                className={`w-full h-full relative overflow-hidden flex ${
+                className={`w-full h-full relative overflow-hidden flex ${overlayAnim.className} ${
                   el.type === "shape" || isIcon
                     ? "items-center justify-center p-2"
                     : el.type === "text"
                     ? "items-start p-2.5"
                     : ""
                 }`}
-                style={surfaceStyle}
+                style={{ ...surfaceStyle, ...overlayAnim.style }}
               >
                 {el.type === "image" && <OverlayImageContent element={el} />}
 
