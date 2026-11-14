@@ -293,7 +293,7 @@ Source Text:
 ${text}`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-4-hydrogen",
         contents: prompt,
         ...(constitutionDirective ? { config: { systemInstruction: constitutionDirective.trim() } } : {}),
       });
@@ -342,7 +342,7 @@ Return a valid JSON object with the exact same structure, where the ${isToIndone
 Only output the JSON. Do not include markdown code block ticks if possible, or wrap in standard json.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-4-hydrogen",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -417,7 +417,7 @@ Strict Requirements:
 5. Return strictly JSON with the exact key "revisedText".`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-4-hydrogen",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -583,7 +583,7 @@ Requirements:
       contents.push({ text: prompt });
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-4-hydrogen",
         contents,
         config: {
           responseMimeType: "application/json",
@@ -719,7 +719,7 @@ Requirements:
       contents.push({ text: prompt });
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-4-hydrogen",
         contents,
         config: {
           responseMimeType: "application/json",
@@ -813,7 +813,7 @@ Return strictly JSON matching this format:
 }`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-4-hydrogen",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -874,7 +874,7 @@ Return strictly JSON matching this format:
 
       try {
         const response = await ai.models.generateContent({
-          model: "gemini-3.8-flash",
+          model: "gemini-4-hydrogen",
           contents: prompt,
           config: {
             responseMimeType: "application/json",
@@ -1001,7 +1001,7 @@ Return strictly a JSON object with this exact format:
 }`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-4-hydrogen",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -1281,7 +1281,7 @@ Output strictly JSON matching this structure:
 }`;
 
           const response = await ai.models.generateContent({
-            model: "gemini-3.8-flash",
+            model: "gemini-4-hydrogen",
             contents: prompt,
             config: {
               responseMimeType: "application/json",
@@ -1486,7 +1486,7 @@ Return strictly JSON matching:
       );
 
       const geminiPromise = ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-4-hydrogen",
         contents: prompt,
         config: {
           responseMimeType: "application/json",
@@ -1539,7 +1539,10 @@ Return strictly JSON matching:
         provider: "gemini-cloud",
       });
     } catch (error: any) {
-      console.warn("RAG Auto-Pilot notice (using deterministic fallback):", error?.message || error);
+      const errStatus = error?.status || error?.code;
+      console.info(
+        `RAG Auto-Pilot using deterministic fallback (${errStatus ? `status ${errStatus}` : "offline mode"})`
+      );
       const fallbackSuggestions = runLocalRagDiff(req.body?.currentSlides || [], req.body?.sourceDocumentContent || "");
       res.json({
         suggestions: fallbackSuggestions.map((s, i) => ({
@@ -1618,7 +1621,7 @@ Return strictly a JSON object matching this schema:
 Only output valid JSON.`;
 
       const response = await ai.models.generateContent({
-        model: "gemini-3.8-flash",
+        model: "gemini-4-hydrogen",
         contents: prompt,
         config: {
           responseMimeType: "application/json",

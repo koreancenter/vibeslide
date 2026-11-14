@@ -118,6 +118,38 @@ export interface SlideImage {
   shadow?: boolean;
 }
 
+export type CanvasElementType = "text" | "image" | "shape";
+
+export type CanvasShapeVariant = "rectangle" | "rounded" | "circle" | "pill" | "line";
+
+export interface CanvasElementStyle {
+  backgroundColor?: string;
+  borderColor?: string;
+  borderWidth?: number;
+  borderRadius?: number;
+  color?: string;
+  fontSize?: number;
+  fontWeight?: "normal" | "medium" | "semibold" | "bold" | "extrabold";
+  textAlign?: "left" | "center" | "right";
+  opacity?: number;
+  shapeVariant?: CanvasShapeVariant;
+  objectFit?: "cover" | "contain";
+  boxShadow?: string;
+}
+
+export interface CanvasElement {
+  id: string;
+  type: CanvasElementType;
+  x: number; // percentage 0-100
+  y: number; // percentage 0-100
+  width: number; // percentage 0-100
+  height: number; // percentage 0-100
+  rotation: number; // degrees
+  zIndex: number;
+  content: string;
+  style: CanvasElementStyle;
+}
+
 export interface SlideData {
   id: string;
   slideNumber: number;
@@ -153,6 +185,9 @@ export interface SlideData {
   
   // Media
   image?: SlideImage;
+
+  // Free-form interactive overlay elements layered over preset layouts
+  overlayElements?: CanvasElement[];
   
   // Presenter notes
   notesKo?: string;
@@ -173,6 +208,8 @@ export interface SlideData {
   customBadgeBg?: string;
   customBadgeText?: string;
 }
+
+export type Slide = SlideData;
 
 export interface HistorySnapshot {
   slides: SlideData[];
@@ -196,6 +233,7 @@ export interface PresentationTheme {
   badgeBg: string;
   badgeText: string;
   fontFamily?: string;
+  backgroundImage?: string;
 }
 
 export interface DriveFileItem {

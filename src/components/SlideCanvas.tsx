@@ -10,6 +10,7 @@ import { FullImageLayout } from "./canvas/FullImageLayout";
 import { SlideFrameHeader } from "./canvas/SlideFrameHeader";
 import { SlideFrameFooter } from "./canvas/SlideFrameFooter";
 import { CanvasOverlays } from "./canvas/CanvasOverlays";
+import { FreeFormOverlay } from "./canvas/FreeFormOverlay";
 import { LayoutDispatcher } from "./canvas/layouts/LayoutDispatcher";
 import { useCanvasInteractions } from "./canvas/hooks/useCanvasInteractions";
 import { polishElementWithAi } from "../utils/api";
@@ -31,6 +32,8 @@ interface SlideCanvasProps {
   onUpdateSlide?: (updatedSlide: SlideData, pushHistory?: boolean, actionName?: string) => void;
   onHighlightedFieldChange?: (field: string | null) => void;
   onLanguageChange?: (lang: Language) => void;
+  selectedOverlayId?: string | null;
+  onSelectOverlayId?: (id: string | null) => void;
 }
 
 export const SlideCanvas: React.FC<SlideCanvasProps> = ({
@@ -48,6 +51,8 @@ export const SlideCanvas: React.FC<SlideCanvasProps> = ({
   onUpdateSlide,
   onHighlightedFieldChange,
   onLanguageChange,
+  selectedOverlayId,
+  onSelectOverlayId,
 }) => {
   const canvasRef = React.useRef<HTMLDivElement>(null);
   const collab = useCollabContext();
@@ -67,6 +72,8 @@ export const SlideCanvas: React.FC<SlideCanvasProps> = ({
     slide,
     onUpdateSlide,
     onCanvasElementClick,
+    externalSelectedOverlayId: selectedOverlayId,
+    onSelectOverlayId,
   });
 
   useEffect(() => {
@@ -340,6 +347,16 @@ export const SlideCanvas: React.FC<SlideCanvasProps> = ({
     <div
       ref={canvasRef}
       onMouseMove={handleCanvasMouseMove}
+      onPointerDown={(e) => {
+        if (!(e.target as HTMLElement).closest("[data-overlay-id]")) {
+          if (interactions.selectedOverlayId) {
+            interactions.setSelectedOverlayId(null);
+          }
+          if (interactions.editingOverlayId) {
+            interactions.setEditingOverlayId(null);
+          }
+        }
+      }}
       className="relative w-full h-full font-sans overflow-hidden group/canvas"
       style={{ perspective: "1000px" }}
       onDragOver={(e) => {
@@ -516,6 +533,35 @@ export const SlideCanvas: React.FC<SlideCanvasProps> = ({
             <SlideFrameFooter slide={slide} theme={theme} />
           </div>
         )}
+
+        {/* Free-Form Canvas Overlay Layer (on top of active preset layout) */}
+        <FreeFormOverlay
+          elements={slide.overlayElements || []}
+          canvasRef={canvasRef}
+          theme={theme}
+          editable={Boolean(onUpdateSlide)}
+          selectedOverlayId={interactions.selectedOverlayId}
+          editingOverlayId={interactions.editingOverlayId}
+          draftOverlayElement={interactions.draftOverlayElement}
+          activeSnapGuides={interactions.activeSnapGuides}
+          isManipulatingOverlay={interactions.isManipulatingOverlay}
+          liveRotationAngle={interactions.liveRotationAngle}
+          onSelectOverlay={interactions.setSelectedOverlayId}
+          onStartEditOverlay={interactions.setEditingOverlayId}
+          onStartDrag={interactions.startOverlayDrag}
+          onStartResize={interactions.startOverlayResize}
+          onStartRotate={interactions.startOverlayRotate}
+          onUpdateContent={interactions.updateOverlayContent}
+          onUpdateStyle={interactions.updateOverlayStyle}
+          onBringToFront={interactions.bringOverlayToFront}
+          onSendToBack={interactions.sendOverlayToBack}
+          onBringForward={interactions.bringOverlayForward}
+          onSendBackward={interactions.sendOverlayBackward}
+          onAlignElement={interactions.alignOverlayElement}
+          onDuplicateElement={interactions.duplicateOverlayElement}
+          onDeleteElement={interactions.deleteOverlayElement}
+          onNudgeElement={interactions.nudgeOverlayElement}
+        />
       </motion.div>
 
       {/* Collaboration Live Peer Cursors Overlay */}

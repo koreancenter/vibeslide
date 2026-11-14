@@ -67,7 +67,7 @@ export const AiSettingsModal: React.FC = () => {
         provider === "local-ollama"
           ? "llama3.2"
           : provider === "gemini-cloud"
-          ? "gemini-3.8-flash"
+          ? "gemini-4-hydrogen"
           : "offline-rule",
     }));
     setTestResult(null);

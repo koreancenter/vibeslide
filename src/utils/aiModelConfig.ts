@@ -4,7 +4,7 @@ const AI_CONFIG_KEY = "vibe_slide_ai_model_config";
 
 export const DEFAULT_AI_CONFIG: AiModelConfig = {
   provider: "gemini-cloud",
-  modelName: "gemini-3.8-flash",
+  modelName: "gemini-4-hydrogen",
   localEndpoint: "http://localhost:11434/v1",
   tone: "quiet-luxury",
 };

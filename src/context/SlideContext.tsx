@@ -111,6 +111,8 @@ export interface SlideContextType {
   viewportContainerRef: React.RefObject<HTMLDivElement | null>;
   highlightedField: string | null;
   setHighlightedField: (field: string | null) => void;
+  selectedOverlayId: string | null;
+  setSelectedOverlayId: (id: string | null) => void;
   hoverTransition: SlideTransition | null;
   setHoverTransition: (t: SlideTransition | null) => void;
 
@@ -213,6 +215,7 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   const [isAutoFit, setIsAutoFit] = useState<boolean>(true);
   const viewportContainerRef = useRef<HTMLDivElement | null>(null);
   const [highlightedField, setHighlightedField] = useState<string | null>(null);
+  const [selectedOverlayId, setSelectedOverlayId] = useState<string | null>(null);
   const [hoverTransition, setHoverTransition] = useState<SlideTransition | null>(null);
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -254,6 +257,10 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const displayedTheme = previewTheme || currentTheme;
   const activeSlide = slides[activeSlideIndex] || slides[0];
+
+  useEffect(() => {
+    setSelectedOverlayId(null);
+  }, [activeSlide?.id]);
 
   const triggerToast = useCallback((msg: string) => {
     if (toastTimeoutRef.current) clearTimeout(toastTimeoutRef.current);
@@ -417,6 +424,13 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
         id: `slide_${Date.now()}`,
         titleKo: `${source.titleKo} (복사본)`,
         titleId: `${source.titleId} (Salinan)`,
+        overlayElements: source.overlayElements
+          ? source.overlayElements.map((el, idx) => ({
+              ...el,
+              id: `ov_${Date.now()}_${idx}_${Math.random().toString(36).slice(2, 6)}`,
+              style: { ...el.style },
+            }))
+          : undefined,
       };
       const next = [...slides];
       next.splice(index + 1, 0, duplicated);
@@ -814,19 +828,30 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setRagSourceDocumentTitle(null);
   }, []);
 
-  // Initial Background RAG Auto-Pilot Check against Intranet Master Document
+  // Initial Background RAG Auto-Pilot Check against Intranet Master Document (runs once on startup)
+  const hasRunInitialRagRef = useRef<boolean>(false);
   useEffect(() => {
+    if (hasRunInitialRagRef.current) return;
+    hasRunInitialRagRef.current = true;
+
     const timer = setTimeout(() => {
       if (!driveSyncConfig.isConnected && ragSuggestions.length === 0) {
         const defaultDoc = SAMPLE_INTRANET_DOCUMENTS[0];
-        runRagAutoPilot(defaultDoc.content, defaultDoc.title).catch((e) => {
-          console.warn("Initial RAG diff check notice:", e);
-        });
+        const localPatches = runLocalRagDiff(slides, defaultDoc.content).map((s, i) => ({
+          id: `rag-patch-${s.slideIndex}-${i}-${Date.now()}`,
+          ...s,
+        }));
+        if (localPatches.length > 0) {
+          setRagSourceDocumentTitle(defaultDoc.title);
+          setRagSuggestions(localPatches);
+          setShowRagBanner(true);
+        }
       }
     }, 1200);
 
     return () => clearTimeout(timer);
-  }, [driveSyncConfig.isConnected, ragSuggestions.length, runRagAutoPilot]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const value: SlideContextType = {
     slides,
@@ -880,6 +905,8 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     viewportContainerRef,
     highlightedField,
     setHighlightedField,
+    selectedOverlayId,
+    setSelectedOverlayId,
     hoverTransition,
     setHoverTransition,
     saveStatus,

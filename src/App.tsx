@@ -6,6 +6,7 @@ import { Navbar } from "./components/Navbar";
 import { SlideCanvas } from "./components/SlideCanvas";
 import { SlideEditor } from "./components/SlideEditor";
 import { SlideHorizontalDock } from "./components/SlideHorizontalDock";
+import { CanvasInsertBar } from "./components/canvas/CanvasInsertBar";
 import { ModalContainer } from "./components/ModalContainer";
 import { useResizableSidebar } from "./utils/useResizableSidebar";
 import {
@@ -216,6 +217,9 @@ function AppWorkspace() {
 
         {/* Center 16:9 Interactive Slide Viewport */}
         <main className="flex-1 bg-[#090c12] flex flex-col overflow-hidden relative border-l border-white/[0.08]">
+          {/* Free-Form Canvas Object Insert Toolbar */}
+          <CanvasInsertBar />
+
           <div
             ref={viewportContainerRef}
             id="viewport-container"
@@ -268,6 +272,8 @@ function AppWorkspace() {
                   }
                   onHighlightedFieldChange={setHighlightedField}
                   onLanguageChange={slideCtx.setLanguage}
+                  selectedOverlayId={slideCtx.selectedOverlayId}
+                  onSelectOverlayId={slideCtx.setSelectedOverlayId}
                 />
               )}
             </div>
