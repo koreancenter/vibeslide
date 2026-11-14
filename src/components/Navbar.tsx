@@ -31,6 +31,7 @@ export interface NavbarProps {
   onOpenBatchTranslate?: () => void;
   onPrint?: () => void;
   onOpenPdfExport?: () => void;
+  onExportPptx?: () => void;
   onShare?: () => void;
   onExportJson?: () => void;
   onImportJson?: (slides: SlideData[]) => void;
@@ -90,6 +91,7 @@ export const Navbar: React.FC<NavbarProps> = (props) => {
   const onOpenBatchTranslate = props.onOpenBatchTranslate || (() => modalCtx.openModal("batchTranslate"));
   const onPrint = props.onPrint || slideCtx.handlePrint;
   const onOpenPdfExport = props.onOpenPdfExport || (() => modalCtx.openModal("pdfExport"));
+  const onExportPptx = props.onExportPptx || slideCtx.handleExportPptx;
   const onShare = props.onShare || slideCtx.handleShare;
   const onExportJson = props.onExportJson || slideCtx.handleExportJson;
   const onImportJson = props.onImportJson || slideCtx.handleImportJson;
@@ -257,6 +259,15 @@ export const Navbar: React.FC<NavbarProps> = (props) => {
                   <span>Export PDF...</span>
                 </button>
               )}
+              <button
+                id="btn-export-pptx"
+                disabled={Boolean(slideCtx.pptxExportProgress)}
+                onClick={() => closeAndRun(onExportPptx)}
+                className="w-full text-left px-3 py-1.5 hover:bg-white/[0.08] hover:text-white flex items-center justify-between group text-xs transition-colors cursor-pointer disabled:opacity-50"
+              >
+                <span className="whitespace-nowrap">Export as PowerPoint (.pptx)</span>
+                <span className="text-[10px] text-orange-300 font-mono">PPTX</span>
+              </button>
               <button
                 onClick={() => closeAndRun(onPrint)}
                 className="w-full text-left px-3 py-1.5 hover:bg-white/[0.08] hover:text-white flex items-center justify-between group text-xs transition-colors cursor-pointer"

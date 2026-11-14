@@ -8,6 +8,7 @@ import { SlideEditor } from "./components/SlideEditor";
 import { SlideHorizontalDock } from "./components/SlideHorizontalDock";
 import { CanvasInsertBar } from "./components/canvas/CanvasInsertBar";
 import { ModalContainer } from "./components/ModalContainer";
+import { PresenterView } from "./components/PresenterView";
 import { useResizableSidebar } from "./utils/useResizableSidebar";
 import {
   RefreshCw,
@@ -293,15 +294,29 @@ function AppWorkspace() {
         </main>
       </div>
 
-      {/* Floating Action Feedback Toast */}
-      {toastMessage && (
+      {/* Floating Action Feedback Toast / PowerPoint Export Progress Toast */}
+      {slideCtx.pptxExportProgress ? (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed bottom-28 left-1/2 transform -translate-x-1/2 z-50 animate-fadeIn pointer-events-none"
+        >
+          <div className="px-4 py-2 rounded-lg bg-[#151921] border border-orange-500/40 shadow-2xl text-xs font-medium text-slate-100 flex items-center space-x-3">
+            <div className="w-3.5 h-3.5 rounded-full border-2 border-orange-400 border-t-transparent animate-spin shrink-0" />
+            <span className="whitespace-nowrap">{slideCtx.pptxExportProgress.message}</span>
+            <span className="text-[11px] font-mono tabular-nums text-orange-300 shrink-0">
+              {slideCtx.pptxExportProgress.current}/{slideCtx.pptxExportProgress.total}
+            </span>
+          </div>
+        </div>
+      ) : toastMessage ? (
         <div className="fixed bottom-28 left-1/2 transform -translate-x-1/2 z-50 animate-fadeIn pointer-events-none">
           <div className="px-3.5 py-1.5 rounded-lg bg-[#151921] border border-white/[0.12] shadow-2xl text-xs font-medium text-slate-100 flex items-center space-x-2">
             <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
             <span>{toastMessage}</span>
           </div>
         </div>
-      )}
+      ) : null}
 
       {/* Floating Pending Drive Update Banner (Prompt Mode) */}
       {pendingDriveUpdate && (
@@ -415,12 +430,36 @@ function AppWorkspace() {
   );
 }
 
+function StandalonePresenterWindow() {
+  const { slides, displayedTheme, language, activeSlideIndex } = useSlideContext();
+  const params =
+    typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+  const sessionId = params?.get("session") || "default";
+
+  return (
+    <div className="w-screen h-screen overflow-hidden bg-[#090b10]">
+      <PresenterView
+        slides={slides}
+        theme={displayedTheme}
+        language={language}
+        sessionId={sessionId}
+        mode="window"
+        initialIndex={activeSlideIndex}
+      />
+    </div>
+  );
+}
+
 export default function App() {
+  const isPresenterWindow =
+    typeof window !== "undefined" &&
+    new URLSearchParams(window.location.search).get("presenter") === "1";
+
   return (
     <SlideProvider>
       <CollabProvider>
         <ModalProvider>
-          <AppWorkspace />
+          {isPresenterWindow ? <StandalonePresenterWindow /> : <AppWorkspace />}
         </ModalProvider>
       </CollabProvider>
     </SlideProvider>

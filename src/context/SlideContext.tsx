@@ -30,6 +30,7 @@ import {
   runLocalRagDiff,
   SAMPLE_INTRANET_DOCUMENTS,
 } from "../utils/ragDiffEngine";
+import { exportSlidesToPptx } from "../utils/pptxExporter";
 
 const getStoredSlides = (): SlideData[] => {
   if (typeof window === "undefined") return INITIAL_SLIDES;
@@ -89,6 +90,8 @@ export interface SlideContextType {
   handleSelectTemplate: (templateSlides: SlideData[], templateName: string) => void;
   handleResetDeck: () => void;
   handleExportJson: () => void;
+  handleExportPptx: () => Promise<void>;
+  pptxExportProgress: { current: number; total: number; message: string } | null;
   handleImportJson: (importedSlides: SlideData[]) => void;
   handleShare: () => void;
   handlePrint: () => void;
@@ -220,6 +223,12 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const [pptxExportProgress, setPptxExportProgress] = useState<{
+    current: number;
+    total: number;
+    message: string;
+  } | null>(null);
+  const isExportingPptxRef = useRef<boolean>(false);
 
   const [saveStatus, setSaveStatus] = useState<"saved" | "saving" | "error">("saved");
   const [lastSavedAt, setLastSavedAt] = useState<Date>(new Date());
@@ -577,6 +586,41 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     URL.revokeObjectURL(url);
   }, [slides]);
 
+  const handleExportPptx = useCallback(async () => {
+    if (isExportingPptxRef.current || slides.length === 0) return;
+    isExportingPptxRef.current = true;
+    setPptxExportProgress({
+      current: 0,
+      total: slides.length,
+      message: "Preparing PowerPoint (.pptx)...",
+    });
+
+    try {
+      const coverTitle =
+        (language === "ko"
+          ? slides[0]?.titleKo || slides[0]?.titleId
+          : slides[0]?.titleId || slides[0]?.titleKo) || "Presentation";
+      const fileName = `Presentation_${new Date().toISOString().slice(0, 10)}.pptx`;
+      const exportedFileName = await exportSlidesToPptx({
+        slides,
+        theme: displayedTheme,
+        language,
+        title: coverTitle,
+        fileName,
+        onProgress: (current, total, message) => {
+          setPptxExportProgress({ current, total, message });
+        },
+      });
+      triggerToast(`PowerPoint exported: ${exportedFileName}`);
+    } catch (err: any) {
+      console.error("PPTX export error:", err);
+      triggerToast(`PowerPoint export failed: ${err?.message || "Unexpected error"}`);
+    } finally {
+      isExportingPptxRef.current = false;
+      setPptxExportProgress(null);
+    }
+  }, [slides, displayedTheme, language, triggerToast]);
+
   const handleImportJson = useCallback(
     (importedSlides: SlideData[]) => {
       setSlidesWithHistory(importedSlides, "Import Slides JSON", 0, true);
@@ -887,6 +931,8 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     handleSelectTemplate,
     handleResetDeck,
     handleExportJson,
+    handleExportPptx,
+    pptxExportProgress,
     handleImportJson,
     handleShare,
     handlePrint,

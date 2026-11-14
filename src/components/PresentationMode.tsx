@@ -1,31 +1,33 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import {
   X,
   ChevronLeft,
   ChevronRight,
   Maximize2,
-  Minimize2,
   Mic,
   Clock,
   CircleDot,
-  PenTool,
   RotateCcw,
   Sparkles,
-  Languages,
   Layers,
   MoveRight,
-  MoveDown,
   RotateCw,
   Ban,
-  ChevronDown,
   Check,
-  Sliders,
-  ListOrdered
+  ListOrdered,
+  MonitorPlay,
+  Columns2,
 } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { SlideData, Language, PresentationTheme, SlideTransition } from "../types";
 import { SlideCanvas } from "./SlideCanvas";
+import { PresenterView } from "./PresenterView";
 import { getJapaneseFallbackText } from "../utils/translationDictionary";
+import {
+  createPresenterSenderId,
+  openPresenterBroadcastChannel,
+  PresenterSyncMessage,
+} from "../utils/presenterChannel";
 
 export type TransitionEffect = SlideTransition;
 
@@ -96,32 +98,45 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
   const [direction, setDirection] = useState<number>(1);
   const [showNotes, setShowNotes] = useState(false);
   const [laserActive, setLaserActive] = useState(false);
-  const [laserPos, setLaserPos] = useState({ x: 0, y: 0 });
+  const [laserPos, setLaserPos] = useState({ xPct: 50, yPct: 50 });
   const [secondsElapsed, setSecondsElapsed] = useState(0);
   const [timerRunning, setTimerRunning] = useState(true);
   const [transitionDropdownOpen, setTransitionDropdownOpen] = useState(false);
+
+  // Dual-screen Presenter View states
+  const [splitPresenterOpen, setSplitPresenterOpen] = useState(false);
+  const [windowPresenterOpen, setWindowPresenterOpen] = useState(false);
+  const [teleprompterActiveInSplit, setTeleprompterActiveInSplit] = useState(false);
+
+  const sessionIdRef = useRef<string>(`pres_${Date.now()}`);
+  const senderIdRef = useRef<string>(createPresenterSenderId("audience"));
+  const channelRef = useRef<BroadcastChannel | null>(null);
+  const presenterWindowRef = useRef<Window | null>(null);
 
   // Transition effect with localStorage persistence
   const [transitionEffect, setTransitionEffect] = useState<TransitionEffect>(() => {
     try {
       const saved = localStorage.getItem("kind_2026_presentation_transition");
-      if (saved && ["fade", "slide-h", "slide-v", "zoom", "flip", "none"].includes(saved)) {
+      if (saved && ["fade", "slide-in", "wipe", "zoom", "flip", "none"].includes(saved)) {
         return saved as TransitionEffect;
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
     return "fade";
   });
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const slideStageRef = useRef<HTMLDivElement>(null);
   const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Save transition preference
   useEffect(() => {
     try {
       localStorage.setItem("kind_2026_presentation_transition", transitionEffect);
-    } catch (e) {}
+    } catch {
+      // ignore
+    }
   }, [transitionEffect]);
 
   // Close dropdown on click outside
@@ -137,7 +152,7 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [transitionDropdownOpen]);
 
-  const currentSlide = slides[currentIndex];
+  const currentSlide = slides[currentIndex] || slides[0];
   const totalBuildInItems =
     currentSlide?.bullets?.length || currentSlide?.stats?.length || 0;
 
@@ -166,19 +181,26 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
       }, delayMs);
       return () => clearInterval(timer);
     }
-  }, [currentIndex, buildInEnabled, totalBuildInItems, currentSlide?.buildInConfig?.enabled, currentSlide?.buildInConfig?.sequenceMode, currentSlide?.buildInConfig?.staggerDelay]);
+  }, [
+    currentIndex,
+    buildInEnabled,
+    totalBuildInItems,
+    currentSlide?.buildInConfig?.enabled,
+    currentSlide?.buildInConfig?.sequenceMode,
+    currentSlide?.buildInConfig?.staggerDelay,
+  ]);
 
   // Step-wise and slide navigation with direction tracking
-  const handleNext = () => {
+  const handleNext = useCallback(() => {
     if (slideBuildInActive && buildInStep < totalBuildInItems) {
       setBuildInStep((prev) => prev + 1);
     } else if (currentIndex < slides.length - 1) {
       setDirection(1);
       setCurrentIndex((prev) => prev + 1);
     }
-  };
+  }, [slideBuildInActive, buildInStep, totalBuildInItems, currentIndex, slides.length]);
 
-  const handlePrev = () => {
+  const handlePrev = useCallback(() => {
     if (slideBuildInActive && buildInStep > 0) {
       setBuildInStep((prev) => prev - 1);
     } else if (currentIndex > 0) {
@@ -190,12 +212,247 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
         setBuildInStep(prevItems);
       }
     }
+  }, [slideBuildInActive, buildInStep, currentIndex, slides, buildInEnabled]);
+
+  const handleGotoSlide = useCallback(
+    (targetIdx: number) => {
+      const clamped = Math.max(0, Math.min(slides.length - 1, targetIdx));
+      if (clamped === currentIndex) return;
+      setDirection(clamped > currentIndex ? 1 : -1);
+      setCurrentIndex(clamped);
+    },
+    [currentIndex, slides.length]
+  );
+
+  // Latest state ref for BroadcastChannel responder
+  const latestStateRef = useRef({
+    currentIndex,
+    buildInStep,
+    buildInEnabled,
+    language,
+    themeId: theme.id,
+    secondsElapsed,
+    timerRunning,
+    slides,
+    laserActive,
+    laserPos,
+  });
+
+  useEffect(() => {
+    latestStateRef.current = {
+      currentIndex,
+      buildInStep,
+      buildInEnabled,
+      language,
+      themeId: theme.id,
+      secondsElapsed,
+      timerRunning,
+      slides,
+      laserActive,
+      laserPos,
+    };
+  }, [
+    currentIndex,
+    buildInStep,
+    buildInEnabled,
+    language,
+    theme.id,
+    secondsElapsed,
+    timerRunning,
+    slides,
+    laserActive,
+    laserPos,
+  ]);
+
+  const navActionsRef = useRef({
+    handleNext,
+    handlePrev,
+    handleGotoSlide,
+  });
+  useEffect(() => {
+    navActionsRef.current = { handleNext, handlePrev, handleGotoSlide };
+  }, [handleNext, handlePrev, handleGotoSlide]);
+
+  // Open & listen on BroadcastChannel
+  useEffect(() => {
+    const sessionId = sessionIdRef.current;
+    const channel = openPresenterBroadcastChannel(sessionId);
+    channelRef.current = channel;
+    if (!channel) return;
+
+    const handleMessage = (event: MessageEvent<PresenterSyncMessage>) => {
+      const msg = event.data;
+      if (!msg || msg.senderId === senderIdRef.current) return;
+      if (msg.sessionId && msg.sessionId !== sessionId) return;
+
+      if (msg.type === "SYNC_REQUEST") {
+        const s = latestStateRef.current;
+        channel.postMessage({
+          type: "STATE_SYNC",
+          senderId: senderIdRef.current,
+          sessionId,
+          currentIndex: s.currentIndex,
+          buildInStep: s.buildInStep,
+          buildInEnabled: s.buildInEnabled,
+          language: s.language,
+          themeId: s.themeId,
+          secondsElapsed: s.secondsElapsed,
+          timerRunning: s.timerRunning,
+          slides: s.slides,
+        } satisfies PresenterSyncMessage);
+        channel.postMessage({
+          type: "LASER_SYNC",
+          senderId: senderIdRef.current,
+          sessionId,
+          active: s.laserActive,
+          xPct: s.laserPos.xPct,
+          yPct: s.laserPos.yPct,
+        } satisfies PresenterSyncMessage);
+      } else if (msg.type === "COMMAND") {
+        switch (msg.action) {
+          case "next":
+            navActionsRef.current.handleNext();
+            break;
+          case "prev":
+            navActionsRef.current.handlePrev();
+            break;
+          case "goto":
+            if (typeof msg.targetIndex === "number") {
+              navActionsRef.current.handleGotoSlide(msg.targetIndex);
+            }
+            break;
+          case "reset-timer":
+            setSecondsElapsed(0);
+            break;
+          case "toggle-timer":
+            setTimerRunning((prev) => !prev);
+            break;
+          case "toggle-buildin":
+            setBuildInEnabled((prev) => !prev);
+            break;
+          case "toggle-laser":
+            setLaserActive((prev) => !prev);
+            break;
+          case "close-presenter":
+            setSplitPresenterOpen(false);
+            break;
+        }
+      } else if (msg.type === "LASER_SYNC") {
+        setLaserActive(msg.active);
+        setLaserPos({ xPct: msg.xPct, yPct: msg.yPct });
+      }
+    };
+
+    channel.addEventListener("message", handleMessage);
+    return () => {
+      channel.removeEventListener("message", handleMessage);
+      channel.close();
+      channelRef.current = null;
+    };
+  }, []);
+
+  // Broadcast state updates whenever presentation state changes
+  useEffect(() => {
+    channelRef.current?.postMessage({
+      type: "STATE_SYNC",
+      senderId: senderIdRef.current,
+      sessionId: sessionIdRef.current,
+      currentIndex,
+      buildInStep,
+      buildInEnabled,
+      language,
+      themeId: theme.id,
+      secondsElapsed,
+      timerRunning,
+      slides,
+    } satisfies PresenterSyncMessage);
+  }, [currentIndex, buildInStep, buildInEnabled, language, theme.id, timerRunning, slides]);
+
+  // Broadcast laser active toggle
+  useEffect(() => {
+    channelRef.current?.postMessage({
+      type: "LASER_SYNC",
+      senderId: senderIdRef.current,
+      sessionId: sessionIdRef.current,
+      active: laserActive,
+      xPct: laserPos.xPct,
+      yPct: laserPos.yPct,
+    } satisfies PresenterSyncMessage);
+  }, [laserActive]);
+
+  // Track if secondary presenter window closes
+  useEffect(() => {
+    if (!windowPresenterOpen) return;
+    const interval = setInterval(() => {
+      if (!presenterWindowRef.current || presenterWindowRef.current.closed) {
+        presenterWindowRef.current = null;
+        setWindowPresenterOpen(false);
+      }
+    }, 800);
+    return () => clearInterval(interval);
+  }, [windowPresenterOpen]);
+
+  // Close secondary window on PresentationMode exit
+  useEffect(() => {
+    return () => {
+      if (presenterWindowRef.current && !presenterWindowRef.current.closed) {
+        try {
+          presenterWindowRef.current.close();
+        } catch {
+          // ignore
+        }
+      }
+    };
+  }, []);
+
+  const handleLaunchPresenterWindow = () => {
+    if (splitPresenterOpen) {
+      setSplitPresenterOpen(false);
+      return;
+    }
+
+    if (presenterWindowRef.current && !presenterWindowRef.current.closed) {
+      presenterWindowRef.current.focus();
+      return;
+    }
+
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set("presenter", "1");
+      url.searchParams.set("session", sessionIdRef.current);
+      url.searchParams.set("slideIndex", String(currentIndex));
+      url.searchParams.set("lang", language);
+      url.searchParams.set("theme", theme.id);
+
+      const popup = window.open(
+        url.toString(),
+        "kind_presenter_view",
+        "width=1360,height=840,menubar=no,toolbar=no,location=no,status=no"
+      );
+
+      if (popup && !popup.closed) {
+        presenterWindowRef.current = popup;
+        setWindowPresenterOpen(true);
+        return;
+      }
+    } catch {
+      // Blocked by iframe sandbox -> fall back to split-screen mode
+    }
+
+    setSplitPresenterOpen(true);
   };
 
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "ArrowRight" || e.key === " " || e.key === "PageDown" || e.key === "Enter") {
+      if (e.key === " " || e.code === "Space") {
+        // When Teleprompter is active in Split-Screen Presenter View, Spacebar controls Play/Pause
+        if (splitPresenterOpen && teleprompterActiveInSplit) {
+          return;
+        }
+        e.preventDefault();
+        handleNext();
+      } else if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === "Enter") {
         e.preventDefault();
         handleNext();
       } else if (e.key === "ArrowLeft" || e.key === "PageUp" || e.key === "Backspace") {
@@ -215,16 +472,14 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [slides.length, currentIndex, buildInStep, buildInEnabled, totalBuildInItems, onClose]);
+  }, [handleNext, handlePrev, onClose, splitPresenterOpen, teleprompterActiveInSplit]);
 
   // Timer effect
   useEffect(() => {
-    let interval: any;
-    if (timerRunning) {
-      interval = setInterval(() => {
-        setSecondsElapsed((prev) => prev + 1);
-      }, 1000);
-    }
+    if (!timerRunning) return;
+    const interval = setInterval(() => {
+      setSecondsElapsed((prev) => prev + 1);
+    }, 1000);
     return () => clearInterval(interval);
   }, [timerRunning]);
 
@@ -234,15 +489,27 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
     return `${m.toString().padStart(2, "0")}:${s.toString().padStart(2, "0")}`;
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (laserActive) {
-      setLaserPos({ x: e.clientX, y: e.clientY });
-    }
+  const handleStageMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!laserActive || !slideStageRef.current) return;
+    const rect = slideStageRef.current.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    const xPct = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+    const yPct = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100));
+    setLaserPos({ xPct, yPct });
+    channelRef.current?.postMessage({
+      type: "LASER_SYNC",
+      senderId: senderIdRef.current,
+      sessionId: sessionIdRef.current,
+      active: true,
+      xPct,
+      yPct,
+    } satisfies PresenterSyncMessage);
   };
 
   // Prioritize slide-specific transition effect if configured, otherwise presentation default
   const effectiveTransition: SlideTransition = currentSlide.transition || transitionEffect || "fade";
-  const currentTransition = TRANSITION_OPTIONS.find((t) => t.id === effectiveTransition) || TRANSITION_OPTIONS[0];
+  const currentTransition =
+    TRANSITION_OPTIONS.find((t) => t.id === effectiveTransition) || TRANSITION_OPTIONS[0];
   const TransitionIcon = currentTransition.icon;
 
   // Animation variants based on transition effect
@@ -346,16 +613,15 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
   return (
     <div
       ref={containerRef}
-      onMouseMove={handleMouseMove}
       className="fixed inset-0 z-50 bg-black text-white flex flex-col justify-between overflow-hidden select-none"
     >
       {/* Top Floating Controls Bar */}
-      <div className="h-12 px-6 flex items-center justify-between bg-[#151921]/90 backdrop-blur-md border-b border-white/[0.08] z-50">
-        <div className="flex items-center space-x-3 text-xs font-semibold text-slate-300">
-          <span className="px-2.5 py-0.5 rounded-lg bg-blue-600 text-white font-mono shadow-xs">
+      <div className="h-12 px-4 sm:px-6 flex items-center justify-between bg-[#151921]/90 backdrop-blur-md border-b border-white/[0.08] z-50 shrink-0 gap-2">
+        <div className="flex items-center space-x-3 text-xs font-semibold text-slate-300 min-w-0">
+          <span className="px-2.5 py-0.5 rounded-lg bg-blue-600 text-white font-mono tabular-nums shadow-xs shrink-0">
             {currentIndex + 1} / {slides.length}
           </span>
-          <span className="truncate max-w-sm hidden sm:inline text-slate-200">
+          <span className="truncate max-w-sm hidden md:inline text-slate-200">
             {language === "ko"
               ? currentSlide.titleKo
               : language === "ja"
@@ -365,72 +631,28 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
         </div>
 
         {/* Center tools: Language switch & Timer & Transition Selector */}
-        <div className="flex items-center space-x-3">
-          {/* Language Switch (Text-only pills) */}
-          <div className="flex items-center bg-[#11141c] rounded-lg p-0.5 border border-white/[0.08] text-[11px] font-mono">
-            <button
-              type="button"
-              id="btn-pres-lang-en"
-              onClick={() => onLanguageChange("en")}
-              className={`px-2 py-1 rounded transition cursor-pointer ${
-                language === "en" ? "bg-blue-600 text-white font-semibold" : "text-slate-400 hover:text-white"
-              }`}
-              title="English Language View"
-              aria-label="English Language View"
-            >
-              EN
-            </button>
-            <button
-              type="button"
-              id="btn-pres-lang-ko"
-              onClick={() => onLanguageChange("ko")}
-              className={`px-2 py-1 rounded transition cursor-pointer ${
-                language === "ko" ? "bg-blue-600 text-white font-semibold" : "text-slate-400 hover:text-white"
-              }`}
-              title="Korean Language View"
-              aria-label="Korean Language View"
-            >
-              KO
-            </button>
-            <button
-              type="button"
-              id="btn-pres-lang-ja"
-              onClick={() => onLanguageChange("ja")}
-              className={`px-2 py-1 rounded transition cursor-pointer ${
-                language === "ja" ? "bg-blue-600 text-white font-semibold" : "text-slate-400 hover:text-white"
-              }`}
-              title="Japanese Language View"
-              aria-label="Japanese Language View"
-            >
-              JA
-            </button>
-            <button
-              type="button"
-              id="btn-pres-lang-id"
-              onClick={() => onLanguageChange("id")}
-              className={`px-2 py-1 rounded transition cursor-pointer ${
-                language === "id" ? "bg-blue-600 text-white font-semibold" : "text-slate-400 hover:text-white"
-              }`}
-              title="Indonesian Language View"
-              aria-label="Indonesian Language View"
-            >
-              ID
-            </button>
-            <button
-              type="button"
-              id="btn-pres-lang-dual"
-              onClick={() => onLanguageChange("dual")}
-              className={`px-2 py-1 rounded transition cursor-pointer ${
-                language === "dual" ? "bg-blue-600 text-white font-semibold" : "text-slate-400 hover:text-white"
-              }`}
-              title="Dual Bilingual View"
-              aria-label="Dual Bilingual View"
-            >
-              DUAL
-            </button>
+        <div className="flex items-center space-x-2.5 shrink-0">
+          {/* Language Switch */}
+          <div className="hidden sm:flex items-center bg-[#11141c] rounded-lg p-0.5 border border-white/[0.08] text-[11px] font-mono">
+            {(["en", "ko", "ja", "id", "dual"] as const).map((lang) => (
+              <button
+                key={lang}
+                type="button"
+                id={`btn-pres-lang-${lang}`}
+                onClick={() => onLanguageChange(lang)}
+                className={`px-2 py-1 rounded transition cursor-pointer uppercase ${
+                  language === lang
+                    ? "bg-blue-600 text-white font-semibold"
+                    : "text-slate-400 hover:text-white"
+                }`}
+                title={`${lang.toUpperCase()} Language View`}
+              >
+                {lang}
+              </button>
+            ))}
           </div>
 
-          {/* Slide Transition Effect Selector (Icon-Only Button, 1 Function 1 Button) */}
+          {/* Slide Transition Effect Selector */}
           <div className="relative" ref={dropdownRef}>
             <button
               type="button"
@@ -447,7 +669,6 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
               <TransitionIcon className="w-4 h-4 text-blue-400" />
             </button>
 
-            {/* Dropdown Menu */}
             {transitionDropdownOpen && (
               <div className="absolute top-full left-1/2 transform -translate-x-1/2 mt-1.5 w-64 bg-[#151921] border border-white/[0.12] rounded-xl shadow-2xl p-2 z-50 animate-fade-in backdrop-blur-md">
                 <div className="flex items-center justify-between px-2 py-1 border-b border-white/[0.08] pb-1.5 mb-1.5">
@@ -515,7 +736,7 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
           </div>
 
           {/* Stopwatch */}
-          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[#11141c] border border-white/[0.08] font-mono text-xs text-slate-300">
+          <div className="flex items-center space-x-1.5 px-2.5 py-1 rounded-lg bg-[#11141c] border border-white/[0.08] font-mono text-xs tabular-nums text-slate-300">
             <Clock className="w-3.5 h-3.5 text-blue-400" strokeWidth={1.5} />
             <span>{formatTime(secondsElapsed)}</span>
             <button
@@ -536,7 +757,7 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
               type="button"
               id="btn-pres-buildin"
               onClick={() => setBuildInEnabled(!buildInEnabled)}
-              className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono transition cursor-pointer ${
+              className={`hidden md:flex items-center space-x-1.5 px-2.5 py-1 rounded-lg border text-xs font-mono tabular-nums transition cursor-pointer ${
                 buildInEnabled
                   ? "bg-violet-600/25 border-violet-500/50 text-violet-200 ring-1 ring-violet-500/30"
                   : "bg-[#11141c] border-white/[0.08] text-slate-400 hover:text-white"
@@ -552,8 +773,38 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
           )}
         </div>
 
-        {/* Right Tools: Laser, Notes & Exit (Icon-Only Buttons, 1 Function 1 Button) */}
-        <div className="flex items-center space-x-2">
+        {/* Right Tools: Presenter View, Split Screen, Laser, Notes & Exit */}
+        <div className="flex items-center space-x-1.5 shrink-0">
+          <button
+            type="button"
+            id="btn-pres-presenter-view"
+            onClick={handleLaunchPresenterWindow}
+            className={`px-2.5 py-1 rounded-lg border text-xs font-medium flex items-center space-x-1.5 transition cursor-pointer whitespace-nowrap ${
+              windowPresenterOpen || splitPresenterOpen
+                ? "bg-blue-600 border-blue-500 text-white shadow-sm"
+                : "bg-[#11141c] border-white/[0.08] text-slate-200 hover:text-white hover:bg-white/5"
+            }`}
+            title="Open Synchronized Presenter View Window (falls back to Split-Screen if popups are blocked)"
+          >
+            <MonitorPlay className="w-3.5 h-3.5" strokeWidth={1.75} />
+            <span className="hidden sm:inline">Presenter View</span>
+          </button>
+
+          <button
+            type="button"
+            id="btn-pres-split-view"
+            onClick={() => setSplitPresenterOpen((prev) => !prev)}
+            className={`p-1.5 rounded-lg border text-xs flex items-center transition cursor-pointer ${
+              splitPresenterOpen
+                ? "bg-indigo-600 border-indigo-500 text-white"
+                : "bg-[#11141c] border-white/[0.08] text-slate-400 hover:text-white"
+            }`}
+            title="Toggle Split-Screen Presenter View"
+            aria-label="Toggle Split-Screen Presenter View"
+          >
+            <Columns2 className="w-4 h-4" strokeWidth={1.5} />
+          </button>
+
           <button
             type="button"
             id="btn-pres-laser"
@@ -578,8 +829,8 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
                 ? "bg-blue-600 border-blue-500 text-white shadow-sm"
                 : "bg-[#11141c] border-white/[0.08] text-slate-400 hover:text-white"
             }`}
-            title="Presenter Notes (N)"
-            aria-label="Presenter Notes"
+            title="Quick Notes Drawer (N)"
+            aria-label="Quick Notes Drawer"
           >
             <Mic className="w-4 h-4" strokeWidth={1.5} />
           </button>
@@ -597,75 +848,125 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
         </div>
       </div>
 
-      {/* Main 16:9 Presentation Canvas Container with Smooth Transitions */}
-      <div className="flex-1 flex items-center justify-center p-4 sm:p-8 relative overflow-hidden">
+      {/* Main Presentation Stage (Full Audience Screen OR Split Audience + Presenter View) */}
+      <div className="flex-1 flex flex-col lg:flex-row overflow-hidden relative">
+        {/* Audience Display Pane */}
         <div
-          className="w-full max-w-6xl aspect-video max-h-[85vh] flex items-center justify-center shadow-2xl relative overflow-hidden rounded-2xl border border-gray-800/60 bg-black/40"
-          style={{ perspective: "1200px" }}
+          className={`${
+            splitPresenterOpen ? "lg:w-[40%] border-b lg:border-b-0 lg:border-r border-white/[0.1] p-4" : "flex-1 p-4 sm:p-8"
+          } flex flex-col items-center justify-center relative overflow-hidden bg-black`}
         >
-          <AnimatePresence mode="wait" custom={direction}>
-            <motion.div
-              key={currentSlide.id || currentIndex}
-              custom={direction}
-              variants={getVariants(effectiveTransition)}
-              initial="initial"
-              animate="animate"
-              exit="exit"
-              className="w-full h-full flex items-center justify-center"
-              style={{ transformStyle: "preserve-3d" }}
-            >
-              <SlideCanvas
-                slide={currentSlide}
-                language={language}
-                theme={theme}
-                totalSlides={slides.length}
-                currentSlideIndex={currentIndex}
-                buildInStep={slideBuildInActive ? buildInStep : undefined}
+          {splitPresenterOpen && (
+            <div className="w-full flex items-center justify-between mb-2 px-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-slate-400">
+                Audience Window
+              </span>
+              <span className="text-[11px] font-mono tabular-nums text-slate-400">
+                Slide {currentIndex + 1}/{slides.length}
+              </span>
+            </div>
+          )}
+
+          <div
+            ref={slideStageRef}
+            onMouseMove={handleStageMouseMove}
+            className={`w-full ${
+              splitPresenterOpen ? "max-w-2xl" : "max-w-6xl max-h-[85vh]"
+            } aspect-video flex items-center justify-center shadow-2xl relative overflow-hidden rounded-2xl border border-gray-800/60 bg-black/40 ${
+              laserActive ? "cursor-crosshair" : ""
+            }`}
+            style={{ perspective: "1200px" }}
+          >
+            <AnimatePresence mode="wait" custom={direction}>
+              <motion.div
+                key={currentSlide.id || currentIndex}
+                custom={direction}
+                variants={getVariants(effectiveTransition)}
+                initial="initial"
+                animate="animate"
+                exit="exit"
+                className="w-full h-full flex items-center justify-center"
+                style={{ transformStyle: "preserve-3d" }}
+              >
+                <SlideCanvas
+                  slide={currentSlide}
+                  language={language}
+                  theme={theme}
+                  totalSlides={slides.length}
+                  currentSlideIndex={currentIndex}
+                  buildInStep={slideBuildInActive ? buildInStep : undefined}
+                />
+              </motion.div>
+            </AnimatePresence>
+
+            {/* Synchronized Percentage-Based Laser Pointer Overlay */}
+            {laserActive && (
+              <div
+                className="absolute pointer-events-none z-[100] w-5 h-5 -ml-2.5 -mt-2.5 rounded-full bg-red-500 shadow-[0_0_15px_6px_rgba(239,68,68,0.85)] transition-[left,top] duration-75 ease-out"
+                style={{
+                  left: `${laserPos.xPct}%`,
+                  top: `${laserPos.yPct}%`,
+                }}
               />
-            </motion.div>
-          </AnimatePresence>
+            )}
+          </div>
+
+          {!splitPresenterOpen && (
+            <>
+              <button
+                type="button"
+                id="btn-pres-prev-slide"
+                onClick={handlePrev}
+                disabled={currentIndex === 0 && (!slideBuildInActive || buildInStep === 0)}
+                className="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-slate-900/60 hover:bg-slate-800 text-white border border-slate-700 backdrop-blur disabled:opacity-0 transition z-40 cursor-pointer"
+                title="Previous (Left Arrow / Backspace)"
+                aria-label="Previous"
+              >
+                <ChevronLeft className="w-6 h-6" />
+              </button>
+
+              <button
+                type="button"
+                id="btn-pres-next-slide"
+                onClick={handleNext}
+                disabled={
+                  currentIndex === slides.length - 1 &&
+                  (!slideBuildInActive || buildInStep >= totalBuildInItems)
+                }
+                className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-slate-900/60 hover:bg-slate-800 text-white border border-slate-700 backdrop-blur disabled:opacity-0 transition z-40 cursor-pointer"
+                title="Next (Right Arrow / Space / Enter)"
+                aria-label="Next"
+              >
+                <ChevronRight className="w-6 h-6" />
+              </button>
+            </>
+          )}
         </div>
 
-        {/* Previous slide button (Icon-Only, 1 Function 1 Button) */}
-        <button
-          type="button"
-          id="btn-pres-prev-slide"
-          onClick={handlePrev}
-          disabled={currentIndex === 0 && (!slideBuildInActive || buildInStep === 0)}
-          className="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-slate-900/60 hover:bg-slate-800 text-white border border-slate-700 backdrop-blur disabled:opacity-0 transition z-40 cursor-pointer"
-          title="Previous (Left Arrow / Backspace)"
-          aria-label="Previous"
-        >
-          <ChevronLeft className="w-6 h-6" />
-        </button>
-
-        {/* Next slide button (Icon-Only, 1 Function 1 Button) */}
-        <button
-          type="button"
-          id="btn-pres-next-slide"
-          onClick={handleNext}
-          disabled={currentIndex === slides.length - 1 && (!slideBuildInActive || buildInStep >= totalBuildInItems)}
-          className="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-slate-900/60 hover:bg-slate-800 text-white border border-slate-700 backdrop-blur disabled:opacity-0 transition z-40 cursor-pointer"
-          title="Next (Right Arrow / Space / Enter)"
-          aria-label="Next"
-        >
-          <ChevronRight className="w-6 h-6" />
-        </button>
+        {/* Synchronized Split-Screen Presenter View Pane */}
+        {splitPresenterOpen && (
+          <div className="flex-1 lg:w-[60%] h-full overflow-hidden">
+            <PresenterView
+              slides={slides}
+              theme={theme}
+              language={language}
+              sessionId={sessionIdRef.current}
+              mode="split"
+              initialIndex={currentIndex}
+              initialBuildInStep={buildInStep}
+              initialBuildInEnabled={buildInEnabled}
+              initialSecondsElapsed={secondsElapsed}
+              initialTimerRunning={timerRunning}
+              initialLaserActive={laserActive}
+              onClose={() => setSplitPresenterOpen(false)}
+              onTeleprompterActiveChange={setTeleprompterActiveInSplit}
+            />
+          </div>
+        )}
       </div>
 
-      {/* Laser pointer overlay */}
-      {laserActive && (
-        <div
-          className="fixed pointer-events-none z-[100] w-5 h-5 -ml-2.5 -mt-2.5 rounded-full bg-red-500 shadow-[0_0_15px_6px_rgba(239,68,68,0.8)] transition-transform duration-75 ease-out"
-          style={{
-            left: `${laserPos.x}px`,
-            top: `${laserPos.y}px`,
-          }}
-        />
-      )}
-
-      {/* Presenter Notes Overlay Drawer */}
-      {showNotes && (
+      {/* Quick Presenter Notes Overlay Drawer */}
+      {showNotes && !splitPresenterOpen && (
         <div className="absolute bottom-0 inset-x-0 bg-slate-950/95 border-t border-purple-800/60 backdrop-blur p-4 z-50 text-slate-200 max-h-48 overflow-y-auto">
           <div className="max-w-4xl mx-auto flex items-start justify-between">
             <div className="space-y-1 flex-1 pr-4">
@@ -697,4 +998,3 @@ export const PresentationMode: React.FC<PresentationModeProps> = ({
     </div>
   );
 };
-
