@@ -1,0 +1,8 @@
+{
+  "name": "AI Slide Builder",
+  "description": "16:9 presentation slide editor with AI auto-layout, visual asset studio, and bilingual translation support",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
