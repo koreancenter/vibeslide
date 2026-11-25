@@ -13,8 +13,13 @@ import {
   Globe,
   Sliders,
   Palette,
+  LogIn,
+  LogOut,
+  User,
+  UserPlus,
 } from "lucide-react";
 import { useCollabContext } from "../context/CollabContext";
+import { useAuthContext } from "../context/AuthContext";
 import { Language, PresentationTheme, SlideData, DriveSyncConfig, SlideLayout, SlideTransition } from "../types";
 import { PRESENTATION_THEMES } from "../data/themes";
 import { SLIDE_LAYOUT_OPTIONS, SLIDE_TRANSITION_OPTIONS } from "./SlideEditor";
@@ -80,6 +85,7 @@ export const Navbar: React.FC<NavbarProps> = (props) => {
   const slideCtx = useSlideContext();
   const modalCtx = useModalContext();
   const collab = useCollabContext();
+  const auth = useAuthContext();
 
   const language = props.language ?? slideCtx.language;
   const onLanguageChange = props.onLanguageChange ?? slideCtx.setLanguage;
@@ -454,6 +460,13 @@ export const Navbar: React.FC<NavbarProps> = (props) => {
                   <span>AI Recommend Design Theme</span>
                 </button>
               )}
+              <button
+                onClick={() => closeAndRun(() => modalCtx.openModal("themeSettings"))}
+                className="w-full text-left px-3 py-1.5 hover:bg-white/[0.08] hover:text-white flex items-center justify-between group text-xs transition-colors cursor-pointer text-amber-200 font-medium"
+              >
+                <span>테마 설정 (한국의 사계 & B&W)...</span>
+                <span className="text-[10px] text-amber-400 font-mono">Theme</span>
+              </button>
             </div>
           )}
         </div>
@@ -491,7 +504,7 @@ export const Navbar: React.FC<NavbarProps> = (props) => {
       </div>
 
       {/* Center: Slide Position Indicator */}
-      <div className="hidden md:flex items-center space-x-2 text-slate-400 font-mono text-[11px]">
+      <div className="hidden 2xl:flex items-center space-x-2 text-slate-400 font-mono text-[11px] whitespace-nowrap shrink-0">
         <span>Slide {activeSlideIndex + 1} of {totalSlides}</span>
       </div>
 
@@ -670,6 +683,22 @@ export const Navbar: React.FC<NavbarProps> = (props) => {
           <span>({collab.users.length + 1})</span>
         </button>
 
+        {/* Theme Settings Button (Korean Four Seasons & Black & White) */}
+        <button
+          id="nav-btn-theme-settings"
+          type="button"
+          onClick={() => modalCtx.openModal("themeSettings")}
+          className="flex items-center space-x-1.5 px-2 py-1 rounded-md text-[11px] font-medium border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.08] text-slate-200 hover:text-white transition cursor-pointer whitespace-nowrap shrink-0"
+          title={`테마 설정: ${currentTheme.name} (한국의 사계 봄·여름·가을·겨울 & Black & White)`}
+          aria-label="테마 설정"
+        >
+          <span
+            className="w-2.5 h-2.5 rounded-sm border border-white/30 shrink-0"
+            style={{ backgroundColor: currentTheme.accentColor }}
+          />
+          <span>테마 설정</span>
+        </button>
+
         {/* Quick Brand Kit Manager Button */}
         <button
           id="nav-btn-brand-kit"
@@ -683,8 +712,75 @@ export const Navbar: React.FC<NavbarProps> = (props) => {
           aria-label="Brand Kit Manager"
         >
           <Palette className="w-3.5 h-3.5 text-sky-400" />
-          <span className="hidden lg:inline">Brand Kit</span>
+          <span className="hidden xl:inline">Brand Kit</span>
         </button>
+
+        <div className="w-px h-3.5 bg-white/[0.08] mx-0.5 shrink-0" />
+
+        {/* Local Account & Auth Controls */}
+        {auth.isAuthenticated ? (
+          <>
+            <button
+              id="nav-btn-my-account"
+              type="button"
+              onClick={() => {
+                auth.setAuthModalMode("account");
+                modalCtx.openModal("auth");
+              }}
+              className="flex items-center space-x-1.5 px-2 py-1 rounded-md text-[11px] font-medium border border-blue-500/35 bg-blue-950/40 hover:bg-blue-900/60 text-blue-200 hover:text-white transition cursor-pointer whitespace-nowrap shrink-0"
+              title={`내 계정 (${auth.user?.displayName || ""} · @${auth.user?.username || ""})`}
+              aria-label="내 계정"
+            >
+              <User className="w-3.5 h-3.5 text-blue-300 shrink-0" />
+              <span>내 계정</span>
+            </button>
+            <button
+              id="nav-btn-logout"
+              type="button"
+              onClick={async () => {
+                await auth.logout();
+                slideCtx.triggerToast("로그아웃되었습니다.");
+              }}
+              className="flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-medium border border-white/[0.08] bg-white/[0.04] hover:bg-rose-500/20 hover:border-rose-500/40 text-slate-300 hover:text-rose-200 transition cursor-pointer whitespace-nowrap shrink-0"
+              title="로그아웃"
+              aria-label="로그아웃"
+            >
+              <LogOut className="w-3.5 h-3.5 shrink-0" />
+              <span>로그아웃</span>
+            </button>
+          </>
+        ) : (
+          <>
+            <button
+              id="nav-btn-create-account"
+              type="button"
+              onClick={() => {
+                auth.setAuthModalMode("register");
+                modalCtx.openModal("auth");
+              }}
+              className="flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-medium border border-emerald-500/35 bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-200 hover:text-white transition cursor-pointer whitespace-nowrap shrink-0"
+              title="로컬 계정 만들기"
+              aria-label="로컬 계정 만들기"
+            >
+              <UserPlus className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+              <span>로컬 계정 만들기</span>
+            </button>
+            <button
+              id="nav-btn-login"
+              type="button"
+              onClick={() => {
+                auth.setAuthModalMode("login");
+                modalCtx.openModal("auth");
+              }}
+              className="flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-medium border border-blue-500/35 bg-blue-950/40 hover:bg-blue-900/60 text-blue-200 hover:text-white transition cursor-pointer whitespace-nowrap shrink-0"
+              title="로그인"
+              aria-label="로그인"
+            >
+              <LogIn className="w-3.5 h-3.5 text-blue-300 shrink-0" />
+              <span>로그인</span>
+            </button>
+          </>
+        )}
 
         {/* Quick Web Publish & Embed Button */}
         <button

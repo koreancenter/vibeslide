@@ -8,6 +8,7 @@ import {
   SlideData,
 } from "../types";
 import { getAccessibleTheme, isLightBackground, parseColor } from "./luminosity";
+import { PRESENTATION_THEMES } from "../data/themes";
 import { getJapaneseFallbackText } from "./translationDictionary";
 import { isSafeImageUrl } from "./security";
 import { getLucideIconComponent } from "../data/iconRegistry";
@@ -919,7 +920,10 @@ export async function exportSlidesToPptx(options: ExportPptxOptions): Promise<st
     const slide = slides[i];
     onProgress?.(i + 1, total, `Exporting slide ${i + 1} of ${total}...`);
 
-    const accessibleBase = getAccessibleTheme(rawTheme, slide.customBg);
+    const effectiveRawTheme = slide.themeOverride
+      ? PRESENTATION_THEMES.find((t) => t.id === slide.themeOverride) || rawTheme
+      : rawTheme;
+    const accessibleBase = getAccessibleTheme(effectiveRawTheme, slide.customBg);
     const theme: PresentationTheme = {
       ...accessibleBase,
       accentColor: slide.customAccentColor || accessibleBase.accentColor,

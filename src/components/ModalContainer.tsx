@@ -61,6 +61,12 @@ const AddSlideModal = React.lazy(() =>
 const SaveSlideTemplateModal = React.lazy(() =>
   import("./TemplateLibrary").then((m) => ({ default: m.SaveSlideTemplateModal }))
 );
+const AuthModal = React.lazy(() =>
+  import("./AuthModal").then((m) => ({ default: m.AuthModal }))
+);
+const ThemeSettingsModal = React.lazy(() =>
+  import("./ThemeSettingsModal").then((m) => ({ default: m.ThemeSettingsModal }))
+);
 
 export const ModalContainer: React.FC = () => {
   const slideCtx = useSlideContext();
@@ -262,6 +268,12 @@ export const ModalContainer: React.FC = () => {
 
       {/* Modal: Save Slide as Personal Template */}
       <SaveSlideTemplateModal />
+
+      {/* Modal: Local Account Registration, Login & Profile */}
+      {isModalOpen("auth") && <AuthModal />}
+
+      {/* Modal: Theme Settings (Korean Four Seasons & Black & White) */}
+      {isModalOpen("themeSettings") && <ThemeSettingsModal />}
 
       {/* Hidden Print View for 16:9 PDF Export */}
       <PrintView slides={slides} language={language} theme={currentTheme} />

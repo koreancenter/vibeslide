@@ -1,4 +1,5 @@
 import express from "express";
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { createServer as createViteServer } from "vite";
@@ -122,6 +123,15 @@ const heavyAiLimiter = rateLimit({
   windowMs: 10 * 60 * 1000,
   max: 30,
   message: { error: "AI operation rate limit reached, please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Rate limiter for authentication endpoints (register / login)
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 30,
+  message: { error: "Too many authentication attempts. Please try again shortly." },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -1693,6 +1703,325 @@ Only output valid JSON.`;
   }
 
   loadCorporateStoreFromDisk();
+
+  // ==========================================
+  // Local User Accounts & Bearer Session Auth
+  // ==========================================
+  const authAccountsFile = path.join(storeDir, "local-accounts.json");
+  const SESSION_SIGNING_SECRET =
+    process.env.SESSION_SECRET && process.env.SESSION_SECRET.trim().length >= 16
+      ? process.env.SESSION_SECRET.trim()
+      : crypto.randomBytes(32).toString("hex");
+  const SESSION_TTL_MS = 24 * 60 * 60 * 1000;
+
+  interface StoredLocalAccount {
+    id: string;
+    username: string;
+    email: string;
+    displayName: string;
+    passwordHash: string;
+    preferredThemeId?: string;
+    createdAt: number;
+    updatedAt: number;
+  }
+
+  const localAccountsStore = new Map<string, StoredLocalAccount>();
+  const activeSessionsStore = new Map<string, { userId: string; expiresAt: number }>();
+
+  function loadLocalAccountsFromDisk() {
+    try {
+      if (fs.existsSync(authAccountsFile)) {
+        const raw = fs.readFileSync(authAccountsFile, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed?.accounts)) {
+          for (const acc of parsed.accounts) {
+            if (acc?.id && acc?.username && acc?.email && acc?.passwordHash) {
+              localAccountsStore.set(acc.id, acc);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Notice: Could not read local accounts store from disk:", err);
+    }
+  }
+
+  function saveLocalAccountsToDisk() {
+    try {
+      fs.mkdirSync(storeDir, { recursive: true });
+      const payload = {
+        accounts: Array.from(localAccountsStore.values()),
+        updatedAt: Date.now(),
+      };
+      fs.writeFileSync(authAccountsFile, JSON.stringify(payload, null, 2), "utf-8");
+    } catch (err) {
+      console.warn("Notice: Could not persist local accounts store to disk:", err);
+    }
+  }
+
+  loadLocalAccountsFromDisk();
+
+  function hashPassword(password: string): string {
+    const salt = crypto.randomBytes(16).toString("hex");
+    const derived = crypto.scryptSync(password, salt, 64).toString("hex");
+    return `${salt}:${derived}`;
+  }
+
+  function verifyPassword(password: string, storedHash: string): boolean {
+    const parts = storedHash.split(":");
+    if (parts.length !== 2) return false;
+    const [salt, keyHex] = parts;
+    if (!salt || !keyHex) return false;
+    try {
+      const keyBuf = Buffer.from(keyHex, "hex");
+      const derivedBuf = crypto.scryptSync(password, salt, 64);
+      if (keyBuf.length !== derivedBuf.length) return false;
+      return crypto.timingSafeEqual(keyBuf, derivedBuf);
+    } catch {
+      return false;
+    }
+  }
+
+  function sanitizePublicUser(acc: StoredLocalAccount) {
+    return {
+      id: acc.id,
+      username: acc.username,
+      email: acc.email,
+      displayName: acc.displayName,
+      preferredThemeId: acc.preferredThemeId,
+      createdAt: acc.createdAt,
+      updatedAt: acc.updatedAt,
+    };
+  }
+
+  function issueSessionToken(userId: string): string {
+    const jti = crypto.randomBytes(18).toString("hex");
+    const expiresAt = Date.now() + SESSION_TTL_MS;
+    activeSessionsStore.set(jti, { userId, expiresAt });
+
+    const payload = Buffer.from(JSON.stringify({ jti, sub: userId, exp: expiresAt })).toString("base64url");
+    const sig = crypto
+      .createHmac("sha256", SESSION_SIGNING_SECRET)
+      .update(payload)
+      .digest("base64url");
+    return `${payload}.${sig}`;
+  }
+
+  function verifyBearerToken(authHeader?: string): { jti: string; account: StoredLocalAccount } | null {
+    if (!authHeader || typeof authHeader !== "string") return null;
+    const match = authHeader.match(/^Bearer\s+([A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)$/);
+    if (!match) return null;
+    const token = match[1];
+    const [payload, sig] = token.split(".");
+    if (!payload || !sig) return null;
+
+    const expectedSig = crypto
+      .createHmac("sha256", SESSION_SIGNING_SECRET)
+      .update(payload)
+      .digest("base64url");
+    const sigBuf = Buffer.from(sig);
+    const expBuf = Buffer.from(expectedSig);
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return null;
+    }
+
+    try {
+      const decoded = JSON.parse(Buffer.from(payload, "base64url").toString("utf-8"));
+      const jti = decoded?.jti;
+      const sub = decoded?.sub;
+      const exp = decoded?.exp;
+      if (typeof jti !== "string" || typeof sub !== "string" || typeof exp !== "number") return null;
+      if (Date.now() > exp) {
+        activeSessionsStore.delete(jti);
+        return null;
+      }
+      const session = activeSessionsStore.get(jti);
+      if (!session || session.userId !== sub || Date.now() > session.expiresAt) {
+        activeSessionsStore.delete(jti);
+        return null;
+      }
+      const account = localAccountsStore.get(sub);
+      if (!account) {
+        activeSessionsStore.delete(jti);
+        return null;
+      }
+      return { jti, account };
+    } catch {
+      return null;
+    }
+  }
+
+  app.post("/api/auth/register", authLimiter, (req, res) => {
+    try {
+      const rawUsername = typeof req.body?.username === "string" ? req.body.username.trim() : "";
+      const rawEmail = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+      const rawDisplayName = typeof req.body?.displayName === "string" ? req.body.displayName.trim() : "";
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+      const preferredThemeId =
+        typeof req.body?.preferredThemeId === "string" && req.body.preferredThemeId.trim().length <= 64
+          ? req.body.preferredThemeId.trim()
+          : undefined;
+
+      if (!rawUsername || rawUsername.length < 2 || rawUsername.length > 32) {
+        return res.status(400).json({ error: "아이디(사용자명)는 2~32자로 입력해 주세요." });
+      }
+      if (!/^[a-zA-Z0-9가-힣._-]+$/.test(rawUsername)) {
+        return res.status(400).json({ error: "아이디에는 영문, 숫자, 한글, '.', '_', '-'만 사용할 수 있습니다." });
+      }
+      if (!rawEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(rawEmail) || rawEmail.length > 120) {
+        return res.status(400).json({ error: "유효한 이메일 주소를 입력해 주세요." });
+      }
+      if (password.length < 8 || password.length > 128) {
+        return res.status(400).json({ error: "비밀번호는 8자 이상 128자 이하로 설정해 주세요." });
+      }
+
+      for (const existing of localAccountsStore.values()) {
+        if (existing.username.toLowerCase() === rawUsername.toLowerCase()) {
+          return res.status(409).json({ error: "이미 사용 중인 로컬 아이디입니다." });
+        }
+        if (existing.email.toLowerCase() === rawEmail) {
+          return res.status(409).json({ error: "이미 가입된 이메일 주소입니다." });
+        }
+      }
+
+      const now = Date.now();
+      const id = `usr_${now.toString(36)}_${crypto.randomBytes(4).toString("hex")}`;
+      const account: StoredLocalAccount = {
+        id,
+        username: rawUsername,
+        email: rawEmail,
+        displayName: (rawDisplayName || rawUsername).slice(0, 48),
+        passwordHash: hashPassword(password),
+        preferredThemeId,
+        createdAt: now,
+        updatedAt: now,
+      };
+
+      localAccountsStore.set(id, account);
+      saveLocalAccountsToDisk();
+
+      const token = issueSessionToken(id);
+      res.status(201).json({
+        token,
+        user: sanitizePublicUser(account),
+      });
+    } catch (err) {
+      console.error("Local register error:", err);
+      res.status(500).json({ error: "로컬 계정 생성 중 오류가 발생했습니다." });
+    }
+  });
+
+  app.post("/api/auth/login", authLimiter, (req, res) => {
+    try {
+      const identifier =
+        typeof req.body?.identifier === "string" ? req.body.identifier.trim().toLowerCase() : "";
+      const password = typeof req.body?.password === "string" ? req.body.password : "";
+
+      if (!identifier || !password) {
+        return res.status(400).json({ error: "아이디(또는 이메일)와 비밀번호를 모두 입력해 주세요." });
+      }
+
+      let found: StoredLocalAccount | undefined;
+      for (const acc of localAccountsStore.values()) {
+        if (acc.email.toLowerCase() === identifier || acc.username.toLowerCase() === identifier) {
+          found = acc;
+          break;
+        }
+      }
+
+      if (!found || !verifyPassword(password, found.passwordHash)) {
+        return res.status(401).json({ error: "아이디/이메일 또는 비밀번호가 올바르지 않습니다." });
+      }
+
+      const token = issueSessionToken(found.id);
+      res.json({
+        token,
+        user: sanitizePublicUser(found),
+      });
+    } catch (err) {
+      console.error("Local login error:", err);
+      res.status(500).json({ error: "로그인 처리 중 오류가 발생했습니다." });
+    }
+  });
+
+  app.post("/api/auth/logout", (req, res) => {
+    const verified = verifyBearerToken(req.headers.authorization);
+    if (verified) {
+      activeSessionsStore.delete(verified.jti);
+    }
+    res.json({ ok: true });
+  });
+
+  app.get("/api/auth/me", (req, res) => {
+    const verified = verifyBearerToken(req.headers.authorization);
+    if (!verified) {
+      return res.status(401).json({ error: "로그인이 필요합니다." });
+    }
+    res.json({ user: sanitizePublicUser(verified.account) });
+  });
+
+  app.patch("/api/auth/me", (req, res) => {
+    const verified = verifyBearerToken(req.headers.authorization);
+    if (!verified) {
+      return res.status(401).json({ error: "로그인이 필요합니다." });
+    }
+
+    const account = verified.account;
+    const { displayName, preferredThemeId, currentPassword, newPassword } = req.body || {};
+
+    if (typeof displayName === "string") {
+      const trimmed = displayName.trim();
+      if (trimmed.length < 1 || trimmed.length > 48) {
+        return res.status(400).json({ error: "표시 이름은 1~48자로 입력해 주세요." });
+      }
+      account.displayName = trimmed;
+    }
+
+    if (preferredThemeId !== undefined) {
+      if (preferredThemeId === null || preferredThemeId === "") {
+        account.preferredThemeId = undefined;
+      } else if (typeof preferredThemeId === "string" && preferredThemeId.trim().length <= 64) {
+        account.preferredThemeId = preferredThemeId.trim();
+      }
+    }
+
+    if (typeof newPassword === "string" && newPassword.length > 0) {
+      if (typeof currentPassword !== "string" || !verifyPassword(currentPassword, account.passwordHash)) {
+        return res.status(401).json({ error: "현재 비밀번호가 일치하지 않습니다." });
+      }
+      if (newPassword.length < 8 || newPassword.length > 128) {
+        return res.status(400).json({ error: "새 비밀번호는 8자 이상 128자 이하로 설정해 주세요." });
+      }
+      account.passwordHash = hashPassword(newPassword);
+    }
+
+    account.updatedAt = Date.now();
+    localAccountsStore.set(account.id, account);
+    saveLocalAccountsToDisk();
+
+    res.json({ user: sanitizePublicUser(account) });
+  });
+
+  app.delete("/api/auth/me", (req, res) => {
+    const verified = verifyBearerToken(req.headers.authorization);
+    if (!verified) {
+      return res.status(401).json({ error: "로그인이 필요합니다." });
+    }
+    const password = typeof req.body?.password === "string" ? req.body.password : "";
+    if (!verifyPassword(password, verified.account.passwordHash)) {
+      return res.status(401).json({ error: "비밀번호가 일치하지 않아 계정을 삭제할 수 없습니다." });
+    }
+
+    const userId = verified.account.id;
+    localAccountsStore.delete(userId);
+    saveLocalAccountsToDisk();
+    for (const [jti, sess] of activeSessionsStore.entries()) {
+      if (sess.userId === userId) {
+        activeSessionsStore.delete(jti);
+      }
+    }
+    res.json({ ok: true });
+  });
 
   // Brand Kits CRUD
   app.get("/api/brand-kits", (_req, res) => {

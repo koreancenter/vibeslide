@@ -47,6 +47,7 @@ export const CoverLayout: React.FC<CoverLayoutProps> = ({
       className="w-full aspect-video rounded-xl p-8 sm:p-12 flex flex-col justify-center relative overflow-hidden shadow-2xl select-text"
       style={{
         backgroundColor: theme.canvasBg,
+        backgroundImage: slide.customBg ? "none" : theme.backgroundImage,
         color: theme.textColor,
         borderColor: theme.borderColor,
         borderWidth: 1,

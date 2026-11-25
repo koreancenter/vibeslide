@@ -18,7 +18,9 @@ export type ModalType =
   | "timelineAnimation"
   | "iconStudio"
   | "brandKit"
-  | "addSlide";
+  | "addSlide"
+  | "auth"
+  | "themeSettings";
 
 
 interface ModalContextType {

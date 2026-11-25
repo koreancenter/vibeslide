@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { motion } from "motion/react";
 import { SlideData, Language, PresentationTheme, SlideTransition } from "../types";
+import { PRESENTATION_THEMES } from "../data/themes";
 import { getAccessibleTheme } from "../utils/luminosity";
 import { getJapaneseFallbackText } from "../utils/translationDictionary";
 import { InlineEditableText } from "./InlineEditableText";
@@ -87,8 +88,15 @@ export const SlideCanvas: React.FC<SlideCanvasProps> = ({
     interactions.setIsColliding(false);
   }, [slide.id]);
 
+  const effectiveRawTheme = useMemo(() => {
+    if (slide.themeOverride) {
+      return PRESENTATION_THEMES.find((t) => t.id === slide.themeOverride) || rawTheme;
+    }
+    return rawTheme;
+  }, [rawTheme, slide.themeOverride]);
+
   const theme = useMemo(() => {
-    const baseTheme = getAccessibleTheme(rawTheme, slide.customBg);
+    const baseTheme = getAccessibleTheme(effectiveRawTheme, slide.customBg);
     return {
       ...baseTheme,
       accentColor: slide.customAccentColor || baseTheme.accentColor,
@@ -97,7 +105,7 @@ export const SlideCanvas: React.FC<SlideCanvasProps> = ({
       badgeText: slide.customBadgeText || baseTheme.badgeText,
     };
   }, [
-    rawTheme,
+    effectiveRawTheme,
     slide.customBg,
     slide.customAccentColor,
     slide.customAccentSecondary,
@@ -505,6 +513,7 @@ export const SlideCanvas: React.FC<SlideCanvasProps> = ({
             className="w-full aspect-video rounded-xl p-6 sm:p-8 flex flex-col justify-between relative overflow-hidden shadow-2xl select-text"
             style={{
               backgroundColor: theme.canvasBg,
+              backgroundImage: slide.customBg ? "none" : theme.backgroundImage,
               color: theme.textColor,
               borderColor: theme.borderColor,
               borderWidth: 1,

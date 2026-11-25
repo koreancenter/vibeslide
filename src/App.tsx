@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { SlideProvider, useSlideContext } from "./context/SlideContext";
+import { AuthProvider } from "./context/AuthContext";
 import { CollabProvider } from "./context/CollabContext";
 import { ModalProvider, useModalContext } from "./context/ModalContext";
 import { Navbar } from "./components/Navbar";
@@ -477,12 +478,14 @@ export default function App() {
     new URLSearchParams(window.location.search).get("presenter") === "1";
 
   return (
-    <SlideProvider>
-      <CollabProvider>
-        <ModalProvider>
-          {isPresenterWindow ? <StandalonePresenterWindow /> : <AppWorkspace />}
-        </ModalProvider>
-      </CollabProvider>
-    </SlideProvider>
+    <AuthProvider>
+      <SlideProvider>
+        <CollabProvider>
+          <ModalProvider>
+            {isPresenterWindow ? <StandalonePresenterWindow /> : <AppWorkspace />}
+          </ModalProvider>
+        </CollabProvider>
+      </SlideProvider>
+    </AuthProvider>
   );
 }

@@ -284,6 +284,9 @@ export interface PresentationTheme {
   brandLogoUrl?: string;
   brandLogoPosition?: BrandLogoPosition;
   hideLogoOnTitleSlide?: boolean;
+  themeCategory?: "seasonal" | "classic";
+  themeMotifKo?: string;
+  themeMotifEn?: string;
 }
 
 export interface DriveFileItem {
@@ -461,7 +464,12 @@ export interface PersonalSlideTemplate {
   updatedAt?: number;
 }
 
-
-
-
-
+export interface LocalAccountUser {
+  id: string;
+  username: string;
+  email: string;
+  displayName: string;
+  preferredThemeId?: string;
+  createdAt: number;
+  updatedAt: number;
+}
