@@ -183,7 +183,7 @@ function AppWorkspace() {
             slides={slides}
             activeSlideIndex={activeSlideIndex}
             onSelectSlide={setActiveSlideIndex}
-            onAddSlide={() => handleAddSlide("cards-3")}
+            onAddSlide={() => modalCtx.openModal("addSlide")}
             onDuplicateSlide={handleDuplicateSlide}
             onDeleteSlide={handleDeleteSlide}
             onMoveSlide={handleMoveSlide}
@@ -306,7 +306,7 @@ function AppWorkspace() {
             slides={slides}
             activeSlideIndex={activeSlideIndex}
             onSelectSlide={setActiveSlideIndex}
-            onAddSlide={() => handleAddSlide("cards-3")}
+            onAddSlide={() => modalCtx.openModal("addSlide")}
             onDuplicateSlide={handleDuplicateSlide}
             onDeleteSlide={handleDeleteSlide}
             onMoveSlide={handleMoveSlide}

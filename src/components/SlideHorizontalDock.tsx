@@ -1,9 +1,10 @@
 import React, { useState, useRef, useEffect } from "react";
 import { SlideData } from "../types";
-import { Plus, Trash2, Copy, GripVertical, ChevronDown, ChevronUp, Layers } from "lucide-react";
+import { Plus, Trash2, Copy, GripVertical, ChevronDown, ChevronUp, Layers, BookmarkPlus, ArrowLeft, ArrowRight } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { renderLayoutMiniWireframe } from "./editor/wireframeHelpers";
 import { getJapaneseFallbackText } from "../utils/translationDictionary";
+import { useSlideContext } from "../context/SlideContext";
 
 export interface SlideHorizontalDockProps {
   slides: SlideData[];
@@ -28,11 +29,36 @@ export const SlideHorizontalDock: React.FC<SlideHorizontalDockProps> = ({
   language = "en",
   onToggleCollapse,
 }) => {
+  const { setSaveTemplateTargetIndex } = useSlideContext();
   const [isCollapsed, setIsCollapsed] = useState(false);
   const [draggedIdx, setDraggedIdx] = useState<number | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const [contextMenu, setContextMenu] = useState<{
+    slideIndex: number;
+    x: number;
+    y: number;
+  } | null>(null);
   const activeThumbRef = useRef<HTMLDivElement | null>(null);
+  const contextMenuRef = useRef<HTMLDivElement | null>(null);
   const isKo = language === "ko";
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const handleDismiss = (e: MouseEvent) => {
+      if (contextMenuRef.current && !contextMenuRef.current.contains(e.target as Node)) {
+        setContextMenu(null);
+      }
+    };
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === "Escape") setContextMenu(null);
+    };
+    window.addEventListener("mousedown", handleDismiss);
+    window.addEventListener("keydown", handleEsc);
+    return () => {
+      window.removeEventListener("mousedown", handleDismiss);
+      window.removeEventListener("keydown", handleEsc);
+    };
+  }, [contextMenu]);
 
   // Automatically scroll active card into view when activeSlideIndex changes
   useEffect(() => {
@@ -219,6 +245,15 @@ export const SlideHorizontalDock: React.FC<SlideHorizontalDockProps> = ({
                     setDragOverIdx(null);
                   }}
                   onClick={() => onSelectSlide(idx)}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const menuW = 216;
+                    const menuH = 176;
+                    const clampedX = Math.min(e.clientX, window.innerWidth - menuW - 12);
+                    const clampedY = Math.max(12, Math.min(e.clientY - menuH, window.innerHeight - menuH - 12));
+                    setContextMenu({ slideIndex: idx, x: clampedX, y: clampedY });
+                  }}
                   className={`group relative w-36 h-[5.25rem] rounded-lg border transition-all duration-150 cursor-grab active:cursor-grabbing flex flex-col justify-between p-2 shrink-0 ${
                     isBeingDragged ? "opacity-30 border-dashed border-white/20" : ""
                   } ${
@@ -249,6 +284,15 @@ export const SlideHorizontalDock: React.FC<SlideHorizontalDockProps> = ({
                       className="flex items-center space-x-1 opacity-0 group-hover:opacity-100 transition-opacity duration-150"
                       onClick={(e) => e.stopPropagation()}
                     >
+                      <button
+                        type="button"
+                        onClick={() => setSaveTemplateTargetIndex(idx)}
+                        className="p-1 rounded hover:bg-blue-500/20 text-slate-400 hover:text-blue-300 transition cursor-pointer"
+                        title={isKo ? "슬라이드를 템플릿으로 저장" : "Save Slide as Template"}
+                        aria-label="Save Slide as Template"
+                      >
+                        <BookmarkPlus className="w-2.5 h-2.5" />
+                      </button>
                       <button
                         type="button"
                         onClick={() => onDuplicateSlide(idx)}
@@ -310,6 +354,96 @@ export const SlideHorizontalDock: React.FC<SlideHorizontalDockProps> = ({
           </button>
         </motion.div>
       </div>
+
+      {/* Slide Thumbnail Context Menu */}
+      {contextMenu && (
+        <div
+          ref={contextMenuRef}
+          role="menu"
+          className="fixed z-50 w-54 bg-[#151923] border border-white/[0.14] rounded-xl shadow-2xl py-1.5 text-xs text-slate-200 font-sans animate-fadeIn"
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+        >
+          <div className="px-3 py-1 text-[10px] font-mono text-slate-400 border-b border-white/[0.06] mb-1">
+            Slide #{contextMenu.slideIndex + 1}
+          </div>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              const target = contextMenu.slideIndex;
+              setContextMenu(null);
+              setSaveTemplateTargetIndex(target);
+            }}
+            className="w-full text-left px-3 py-1.5 hover:bg-blue-600/20 hover:text-blue-200 flex items-center gap-2 cursor-pointer font-medium text-blue-300"
+          >
+            <BookmarkPlus className="w-3.5 h-3.5" />
+            <span>{isKo ? "슬라이드를 템플릿으로 저장" : "Save Slide as Template"}</span>
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              const target = contextMenu.slideIndex;
+              setContextMenu(null);
+              onDuplicateSlide(target);
+            }}
+            className="w-full text-left px-3 py-1.5 hover:bg-white/[0.08] hover:text-white flex items-center gap-2 cursor-pointer"
+          >
+            <Copy className="w-3.5 h-3.5 text-slate-400" />
+            <span>{isKo ? "슬라이드 복제" : "Duplicate Slide"}</span>
+          </button>
+          {onMoveSlide && (
+            <>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={contextMenu.slideIndex <= 0}
+                onClick={() => {
+                  const target = contextMenu.slideIndex;
+                  setContextMenu(null);
+                  onMoveSlide(target, target - 1);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-white/[0.08] hover:text-white disabled:opacity-35 flex items-center gap-2 cursor-pointer"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 text-slate-400" />
+                <span>{isKo ? "왼쪽으로 이동" : "Move Earlier"}</span>
+              </button>
+              <button
+                type="button"
+                role="menuitem"
+                disabled={contextMenu.slideIndex >= slides.length - 1}
+                onClick={() => {
+                  const target = contextMenu.slideIndex;
+                  setContextMenu(null);
+                  onMoveSlide(target, target + 1);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-white/[0.08] hover:text-white disabled:opacity-35 flex items-center gap-2 cursor-pointer"
+              >
+                <ArrowRight className="w-3.5 h-3.5 text-slate-400" />
+                <span>{isKo ? "오른쪽으로 이동" : "Move Later"}</span>
+              </button>
+            </>
+          )}
+          {slides.length > 1 && (
+            <>
+              <div className="my-1 border-t border-white/[0.08]" />
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  const target = contextMenu.slideIndex;
+                  setContextMenu(null);
+                  onDeleteSlide(target);
+                }}
+                className="w-full text-left px-3 py-1.5 hover:bg-rose-500/20 text-rose-300 flex items-center gap-2 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>{isKo ? "슬라이드 삭제" : "Delete Slide"}</span>
+              </button>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };

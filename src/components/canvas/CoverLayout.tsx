@@ -34,6 +34,14 @@ export const CoverLayout: React.FC<CoverLayoutProps> = ({
   language = "en",
   onLanguageChange,
 }) => {
+  const logoUrl = slide.brandWatermark?.logoUrl ?? theme.brandLogoUrl;
+  const logoPos = slide.brandWatermark?.logoPosition ?? theme.brandLogoPosition ?? "top-right";
+  const hideOnTitle =
+    Boolean(slide.brandWatermark?.hideOnTitleSlide) ||
+    Boolean(theme.hideLogoOnTitleSlide) ||
+    logoPos === "hidden-on-title";
+  const hasTopLeftLogo = Boolean(logoUrl && !hideOnTitle && logoPos === "top-left");
+
   return (
     <div
       className="w-full aspect-video rounded-xl p-8 sm:p-12 flex flex-col justify-center relative overflow-hidden shadow-2xl select-text"
@@ -45,7 +53,7 @@ export const CoverLayout: React.FC<CoverLayoutProps> = ({
       }}
     >
       <div className="flex items-center justify-between z-10">
-        <div className="flex items-center space-x-2">
+        <div className={`flex items-center space-x-2 ${hasTopLeftLogo ? "pl-28 sm:pl-32" : ""}`}>
           <span
             className="px-3 py-1 rounded-full text-xs font-bold tracking-wider uppercase flex items-center gap-1.5"
             style={{

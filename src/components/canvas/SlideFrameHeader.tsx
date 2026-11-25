@@ -19,12 +19,16 @@ export const SlideFrameHeader: React.FC<SlideFrameHeaderProps> = ({
   onImageChange,
   getRawText,
 }) => {
+  const logoUrl = slide.brandWatermark?.logoUrl ?? theme.brandLogoUrl;
+  const logoPos = slide.brandWatermark?.logoPosition ?? theme.brandLogoPosition ?? "top-right";
+  const hasTopLeftLogo = Boolean(logoUrl && logoPos === "top-left");
+
   return (
     <div
       className="flex items-center justify-between pb-3 border-b"
       style={{ borderColor: theme.borderColor }}
     >
-      <div className="flex items-center space-x-2">
+      <div className={`flex items-center space-x-2 ${hasTopLeftLogo ? "pl-28 sm:pl-32" : ""}`}>
         <span
           className="w-2 h-2 rounded-full"
           style={{ backgroundColor: theme.accentColor }}

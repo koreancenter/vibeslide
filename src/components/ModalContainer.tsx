@@ -52,6 +52,15 @@ const TimelineAnimationModal = React.lazy(() =>
 const IconStudioModal = React.lazy(() =>
   import("./IconStudioModal").then((m) => ({ default: m.IconStudioModal }))
 );
+const BrandKitModal = React.lazy(() =>
+  import("./BrandKitModal").then((m) => ({ default: m.BrandKitModal }))
+);
+const AddSlideModal = React.lazy(() =>
+  import("./AddSlideModal").then((m) => ({ default: m.AddSlideModal }))
+);
+const SaveSlideTemplateModal = React.lazy(() =>
+  import("./TemplateLibrary").then((m) => ({ default: m.SaveSlideTemplateModal }))
+);
 
 export const ModalContainer: React.FC = () => {
   const slideCtx = useSlideContext();
@@ -244,6 +253,15 @@ export const ModalContainer: React.FC = () => {
           onClose={() => closeModal("iconStudio")}
         />
       )}
+
+      {/* Modal: Corporate Brand Kit Manager */}
+      {isModalOpen("brandKit") && <BrandKitModal />}
+
+      {/* Modal: Add New Slide (Standard Layouts & My Templates) */}
+      {isModalOpen("addSlide") && <AddSlideModal />}
+
+      {/* Modal: Save Slide as Personal Template */}
+      <SaveSlideTemplateModal />
 
       {/* Hidden Print View for 16:9 PDF Export */}
       <PrintView slides={slides} language={language} theme={currentTheme} />

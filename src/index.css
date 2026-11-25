@@ -24,6 +24,35 @@ code, pre, .font-mono {
   font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
 }
 
+/* Scoped Slide Brand Typography (overrides global .font-sans when Brand Kit or custom theme font is active) */
+.slide-brand-scope {
+  font-family: var(--slide-body-font, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif) !important;
+}
+.slide-brand-scope p,
+.slide-brand-scope span,
+.slide-brand-scope div,
+.slide-brand-scope li,
+.slide-brand-scope td,
+.slide-brand-scope th,
+.slide-brand-scope input,
+.slide-brand-scope textarea,
+.slide-brand-scope button {
+  font-family: inherit !important;
+}
+.slide-brand-scope .font-mono,
+.slide-brand-scope code,
+.slide-brand-scope pre {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace !important;
+}
+.slide-brand-scope h1,
+.slide-brand-scope h2,
+.slide-brand-scope h3,
+.slide-brand-scope h1 *,
+.slide-brand-scope h2 *,
+.slide-brand-scope h3 * {
+  font-family: var(--slide-heading-font, var(--slide-body-font, 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif)) !important;
+}
+
 /* Transform Lucide outline style icons to look exceptionally crisp and thin */
 svg.lucide, svg {
   stroke-width: 1.5px;

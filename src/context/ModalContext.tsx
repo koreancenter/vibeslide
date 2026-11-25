@@ -16,7 +16,9 @@ export type ModalType =
   | "collab"
   | "webPublish"
   | "timelineAnimation"
-  | "iconStudio";
+  | "iconStudio"
+  | "brandKit"
+  | "addSlide";
 
 
 interface ModalContextType {

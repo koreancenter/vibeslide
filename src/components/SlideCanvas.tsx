@@ -16,6 +16,8 @@ import { useCanvasInteractions } from "./canvas/hooks/useCanvasInteractions";
 import { polishElementWithAi } from "../utils/api";
 import { CollabCursorsOverlay } from "./canvas/CollabCursorsOverlay";
 import { useCollabContext } from "../context/CollabContext";
+import { formatCssFontFamily, loadGoogleFont } from "../utils/googleFonts";
+import { isSafeImageUrl } from "../utils/security";
 
 interface SlideCanvasProps {
   slide: SlideData;
@@ -102,6 +104,52 @@ export const SlideCanvas: React.FC<SlideCanvasProps> = ({
     slide.customBadgeBg,
     slide.customBadgeText,
   ]);
+
+  const activeBodyFont =
+    slide.brandWatermark?.bodyFont || theme.bodyFont || theme.fontFamily;
+  const activeHeadingFont =
+    slide.brandWatermark?.headingFont || theme.headingFont || activeBodyFont;
+
+  useEffect(() => {
+    if (activeBodyFont) loadGoogleFont(activeBodyFont);
+    if (activeHeadingFont && activeHeadingFont !== activeBodyFont) {
+      loadGoogleFont(activeHeadingFont);
+    }
+  }, [activeBodyFont, activeHeadingFont]);
+
+  const bodyFontCss = activeBodyFont
+    ? formatCssFontFamily(activeBodyFont, "sans-serif")
+    : undefined;
+  const headingFontCss = activeHeadingFont
+    ? formatCssFontFamily(activeHeadingFont, "sans-serif")
+    : undefined;
+
+  const brandLogoUrl = slide.brandWatermark?.logoUrl ?? theme.brandLogoUrl;
+  const rawLogoPosition =
+    slide.brandWatermark?.logoPosition ?? theme.brandLogoPosition ?? "top-right";
+  const hideLogoOnTitle =
+    Boolean(slide.brandWatermark?.hideOnTitleSlide) ||
+    Boolean(theme.hideLogoOnTitleSlide) ||
+    rawLogoPosition === "hidden-on-title";
+  const shouldRenderBrandLogo =
+    Boolean(brandLogoUrl && isSafeImageUrl(brandLogoUrl)) &&
+    !(slide.layout === "cover" && hideLogoOnTitle);
+
+  const logoPositionClass = useMemo(() => {
+    if (rawLogoPosition === "top-left") {
+      return slide.layout === "cover"
+        ? "top-7 sm:top-10 left-8 sm:left-12"
+        : "top-5 sm:top-6 left-6 sm:left-8";
+    }
+    if (rawLogoPosition === "bottom-right") {
+      return slide.layout === "cover"
+        ? "bottom-12 right-8 sm:right-12"
+        : "bottom-10 sm:bottom-11 right-6 sm:right-8";
+    }
+    return slide.layout === "cover"
+      ? "top-7 sm:top-10 right-56 sm:right-60"
+      : "top-5 sm:top-6 right-24 sm:right-28";
+  }, [rawLogoPosition, slide.layout]);
 
   const getText = (ko: string = "", id: string = "", ja?: string) => {
     if (language === "ko") return ko || id;
@@ -364,8 +412,14 @@ export const SlideCanvas: React.FC<SlideCanvasProps> = ({
           }
         }
       }}
-      className="relative w-full h-full font-sans overflow-hidden group/canvas"
-      style={{ perspective: "1000px" }}
+      className="relative w-full h-full slide-brand-scope overflow-hidden group/canvas"
+      style={
+        {
+          perspective: "1000px",
+          ...(bodyFontCss ? { "--slide-body-font": bodyFontCss } : {}),
+          ...(headingFontCss ? { "--slide-heading-font": headingFontCss } : {}),
+        } as React.CSSProperties
+      }
       onDragOver={(e) => {
         if (interactions.draggedIndex !== null) {
           const colliding = interactions.checkCollision(e.clientX, e.clientY);
@@ -538,6 +592,20 @@ export const SlideCanvas: React.FC<SlideCanvasProps> = ({
 
             {/* Footer */}
             <SlideFrameFooter slide={slide} theme={theme} />
+          </div>
+        )}
+
+        {/* Brand Kit Logo Watermark Overlay */}
+        {shouldRenderBrandLogo && brandLogoUrl && (
+          <div
+            data-brand-watermark="true"
+            className={`pointer-events-none select-none absolute z-20 flex items-center ${logoPositionClass}`}
+          >
+            <img
+              src={brandLogoUrl}
+              alt={slide.brandWatermark?.brandKitName || theme.name || "Brand Logo"}
+              className="h-5 sm:h-6 max-w-[96px] sm:max-w-[112px] object-contain opacity-90 drop-shadow-sm"
+            />
           </div>
         )}
 

@@ -34,6 +34,10 @@ export const FullImageLayout: React.FC<FullImageLayoutProps> = ({
   getRawText,
   getText,
 }) => {
+  const logoUrl = slide.brandWatermark?.logoUrl ?? theme.brandLogoUrl;
+  const logoPos = slide.brandWatermark?.logoPosition ?? theme.brandLogoPosition ?? "top-right";
+  const hasTopLeftLogo = Boolean(logoUrl && logoPos === "top-left");
+
   return (
     <div
       className={`w-full aspect-video rounded-xl relative overflow-hidden shadow-2xl select-text flex flex-col justify-between p-6 sm:p-8 border transition-all duration-300 ${
@@ -66,7 +70,7 @@ export const FullImageLayout: React.FC<FullImageLayoutProps> = ({
         className="relative z-10 flex items-center justify-between pb-3 border-b border-white/20"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center space-x-2">
+        <div className={`flex items-center space-x-2 ${hasTopLeftLogo ? "pl-28 sm:pl-32" : ""}`}>
           <span className="w-2.5 h-2.5 rounded-full bg-blue-400" />
           <span className="text-xs font-bold tracking-wide uppercase text-white/90">
             {getRawText(slide.categoryKo, slide.categoryId) || "Featured Visual"}

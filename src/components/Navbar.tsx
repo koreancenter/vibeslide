@@ -12,6 +12,7 @@ import {
   Users,
   Globe,
   Sliders,
+  Palette,
 } from "lucide-react";
 import { useCollabContext } from "../context/CollabContext";
 import { Language, PresentationTheme, SlideData, DriveSyncConfig, SlideLayout, SlideTransition } from "../types";
@@ -101,7 +102,7 @@ export const Navbar: React.FC<NavbarProps> = (props) => {
 
   const totalSlides = props.totalSlides ?? slideCtx.slides.length;
   const activeSlideIndex = props.activeSlideIndex ?? slideCtx.activeSlideIndex;
-  const onAddSlide = props.onAddSlide || (() => slideCtx.handleAddSlide("cards-3"));
+  const onAddSlide = props.onAddSlide || (() => modalCtx.openModal("addSlide"));
   const onDuplicateSlide = props.onDuplicateSlide || slideCtx.handleDuplicateSlide;
   const onDeleteSlide = props.onDeleteSlide || slideCtx.handleDeleteSlide;
 
@@ -404,6 +405,15 @@ export const Navbar: React.FC<NavbarProps> = (props) => {
                 </span>
               </button>
               <button
+                onClick={() => closeAndRun(() => modalCtx.openModal("brandKit"))}
+                className="w-full text-left px-3 py-1.5 hover:bg-white/[0.08] hover:text-white flex items-center justify-between group text-xs transition-colors cursor-pointer text-sky-300 font-medium"
+              >
+                <span>Brand Kit & Corporate Styles...</span>
+                <span className="text-[10px] bg-sky-500/20 text-sky-300 px-1.5 py-0.5 rounded font-mono">
+                  {slideCtx.activeBrandKitId ? "Active" : `${slideCtx.brandKits.length}`}
+                </span>
+              </button>
+              <button
                 onClick={() => closeAndRun(() => modalCtx.openModal("aiSettings"))}
                 className="w-full text-left px-3 py-1.5 hover:bg-white/[0.08] hover:text-white flex items-center justify-between group text-xs transition-colors cursor-pointer"
               >
@@ -658,6 +668,22 @@ export const Navbar: React.FC<NavbarProps> = (props) => {
           <Users className="w-3.5 h-3.5" />
           <span className="hidden sm:inline">Live</span>
           <span>({collab.users.length + 1})</span>
+        </button>
+
+        {/* Quick Brand Kit Manager Button */}
+        <button
+          id="nav-btn-brand-kit"
+          onClick={() => modalCtx.openModal("brandKit")}
+          className={`flex items-center space-x-1.5 px-2 py-1 rounded-md text-[11px] font-medium border transition cursor-pointer whitespace-nowrap shrink-0 ${
+            slideCtx.activeBrandKitId
+              ? "bg-sky-950/50 hover:bg-sky-900/60 border-sky-500/40 text-sky-300"
+              : "bg-white/[0.04] hover:bg-white/[0.08] border-white/[0.08] text-slate-300 hover:text-white"
+          }`}
+          title="Brand Kit Manager (Colors, Google Fonts & Logo Watermark)"
+          aria-label="Brand Kit Manager"
+        >
+          <Palette className="w-3.5 h-3.5 text-sky-400" />
+          <span className="hidden lg:inline">Brand Kit</span>
         </button>
 
         {/* Quick Web Publish & Embed Button */}

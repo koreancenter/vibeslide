@@ -1,4 +1,5 @@
 import express from "express";
+import fs from "fs";
 import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI, Type } from "@google/genai";
@@ -1646,6 +1647,147 @@ Only output valid JSON.`;
         slides,
       });
     }
+  });
+
+  // ==========================================
+  // Brand Kits & Personal Slide Template Library Storage
+  // ==========================================
+  const storeDir = path.join(process.cwd(), ".data");
+  const storeFile = path.join(storeDir, "corporate-library.json");
+  const brandKitsStore = new Map<string, any>();
+  const customTemplatesStore = new Map<string, any>();
+
+  function loadCorporateStoreFromDisk() {
+    try {
+      if (fs.existsSync(storeFile)) {
+        const raw = fs.readFileSync(storeFile, "utf-8");
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed?.brandKits)) {
+          for (const k of parsed.brandKits) {
+            if (k?.id) brandKitsStore.set(k.id, k);
+          }
+        }
+        if (Array.isArray(parsed?.templates)) {
+          for (const t of parsed.templates) {
+            if (t?.id) customTemplatesStore.set(t.id, t);
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("Notice: Could not read corporate library store from disk:", err);
+    }
+  }
+
+  function saveCorporateStoreToDisk() {
+    try {
+      fs.mkdirSync(storeDir, { recursive: true });
+      const payload = {
+        brandKits: Array.from(brandKitsStore.values()),
+        templates: Array.from(customTemplatesStore.values()),
+        updatedAt: Date.now(),
+      };
+      fs.writeFileSync(storeFile, JSON.stringify(payload, null, 2), "utf-8");
+    } catch (err) {
+      console.warn("Notice: Could not persist corporate library store to disk:", err);
+    }
+  }
+
+  loadCorporateStoreFromDisk();
+
+  // Brand Kits CRUD
+  app.get("/api/brand-kits", (_req, res) => {
+    const brandKits = Array.from(brandKitsStore.values()).sort(
+      (a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)
+    );
+    res.json({ brandKits });
+  });
+
+  app.post("/api/brand-kits", (req, res) => {
+    try {
+      const kit = req.body;
+      if (!kit || typeof kit.name !== "string" || !kit.name.trim()) {
+        return res.status(400).json({ error: "Brand kit name is required." });
+      }
+      const now = Date.now();
+      const id =
+        typeof kit.id === "string" && kit.id.trim()
+          ? kit.id.trim()
+          : `bk_${now.toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+      const record = {
+        ...kit,
+        id,
+        name: kit.name.trim(),
+        createdAt: typeof kit.createdAt === "number" ? kit.createdAt : now,
+        updatedAt: now,
+      };
+      brandKitsStore.set(id, record);
+      saveCorporateStoreToDisk();
+      const brandKits = Array.from(brandKitsStore.values()).sort(
+        (a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)
+      );
+      res.json({ brandKit: record, brandKits });
+    } catch (err: any) {
+      console.error("Save brand kit error:", err);
+      res.status(500).json({ error: "Failed to save brand kit" });
+    }
+  });
+
+  app.delete("/api/brand-kits/:id", (req, res) => {
+    const { id } = req.params;
+    brandKitsStore.delete(id);
+    saveCorporateStoreToDisk();
+    const brandKits = Array.from(brandKitsStore.values()).sort(
+      (a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)
+    );
+    res.json({ ok: true, brandKits });
+  });
+
+  // Personal Custom Slide Templates CRUD
+  app.get("/api/custom-templates", (_req, res) => {
+    const templates = Array.from(customTemplatesStore.values()).sort(
+      (a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)
+    );
+    res.json({ templates });
+  });
+
+  app.post("/api/custom-templates", (req, res) => {
+    try {
+      const tpl = req.body;
+      if (!tpl || typeof tpl.name !== "string" || !tpl.name.trim() || !tpl.slide) {
+        return res.status(400).json({ error: "Template name and slide structure are required." });
+      }
+      const now = Date.now();
+      const id =
+        typeof tpl.id === "string" && tpl.id.trim()
+          ? tpl.id.trim()
+          : `tpl_${now.toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+      const record = {
+        ...tpl,
+        id,
+        name: tpl.name.trim(),
+        createdAt: typeof tpl.createdAt === "number" ? tpl.createdAt : now,
+        updatedAt: now,
+      };
+      customTemplatesStore.set(id, record);
+      saveCorporateStoreToDisk();
+      const templates = Array.from(customTemplatesStore.values()).sort(
+        (a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)
+      );
+      res.json({ template: record, templates });
+    } catch (err: any) {
+      console.error("Save custom template error:", err);
+      res.status(500).json({ error: "Failed to save custom slide template" });
+    }
+  });
+
+  app.delete("/api/custom-templates/:id", (req, res) => {
+    const { id } = req.params;
+    customTemplatesStore.delete(id);
+    saveCorporateStoreToDisk();
+    const templates = Array.from(customTemplatesStore.values()).sort(
+      (a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)
+    );
+    res.json({ ok: true, templates });
   });
 
   // ==========================================

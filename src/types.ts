@@ -246,6 +246,9 @@ export interface SlideData {
   customAccentSecondary?: string;
   customBadgeBg?: string;
   customBadgeText?: string;
+
+  // Brand Kit watermark & typography overrides
+  brandWatermark?: SlideBrandWatermark;
 }
 
 export type Slide = SlideData;
@@ -272,7 +275,15 @@ export interface PresentationTheme {
   badgeBg: string;
   badgeText: string;
   fontFamily?: string;
+  headingFont?: string;
+  bodyFont?: string;
   backgroundImage?: string;
+  brandKitId?: string;
+  brandPrimaryColor?: string;
+  brandSecondaryColor?: string;
+  brandLogoUrl?: string;
+  brandLogoPosition?: BrandLogoPosition;
+  hideLogoOnTitleSlide?: boolean;
 }
 
 export interface DriveFileItem {
@@ -411,6 +422,45 @@ export interface PublishedDeckMeta {
   themeId?: string;
   author?: string;
 }
+
+export type BrandLogoPosition = "top-left" | "top-right" | "bottom-right" | "hidden-on-title";
+
+export interface SlideBrandWatermark {
+  brandKitId?: string;
+  brandKitName?: string;
+  logoUrl?: string;
+  logoPosition?: BrandLogoPosition;
+  hideOnTitleSlide?: boolean;
+  headingFont?: string;
+  bodyFont?: string;
+}
+
+export interface BrandKit {
+  id: string;
+  name: string;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  headingFont: string;
+  bodyFont: string;
+  logoUrl?: string;
+  logoPosition: BrandLogoPosition;
+  hideLogoOnTitleSlide?: boolean;
+  surfaceMode?: "dark" | "light";
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface PersonalSlideTemplate {
+  id: string;
+  name: string;
+  category?: string;
+  description?: string;
+  slide: SlideData;
+  createdAt: number;
+  updatedAt?: number;
+}
+
 
 
 

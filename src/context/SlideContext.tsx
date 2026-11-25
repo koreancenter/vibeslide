@@ -10,7 +10,25 @@ import {
   RagPatchSuggestion,
   DesignConstitution,
   CanvasConnectorType,
+  BrandKit,
+  PersonalSlideTemplate,
 } from "../types";
+import {
+  buildTemplateFromSlide,
+  buildThemeFromBrandKit,
+  getActiveBrandKitId,
+  instantiateSlideFromTemplate,
+  loadLocalBrandKits,
+  loadLocalCustomTemplates,
+  persistBrandKit,
+  persistCustomTemplate,
+  removeBrandKit,
+  removeCustomTemplate,
+  setActiveBrandKitId,
+  syncBrandKitsWithBackend,
+  syncCustomTemplatesWithBackend,
+} from "../utils/corporateAssetsStore";
+import { loadGoogleFont } from "../utils/googleFonts";
 import { loadDesignConstitution, saveDesignConstitution } from "../utils/constitution";
 import { INITIAL_SLIDES } from "../data/initialSlides";
 import { PRESENTATION_THEMES } from "../data/themes";
@@ -176,6 +194,20 @@ export interface SlideContextType {
   constitution: DesignConstitution;
   setConstitution: React.Dispatch<React.SetStateAction<DesignConstitution>>;
   updateConstitution: (updates: Partial<DesignConstitution>) => void;
+
+  // Brand Kit Manager & Personal Slide Template Library
+  brandKits: BrandKit[];
+  activeBrandKitId: string | null;
+  saveBrandKit: (kit: BrandKit) => Promise<BrandKit>;
+  deleteBrandKit: (id: string) => Promise<void>;
+  applyBrandKitToDeck: (kit: BrandKit) => Promise<void>;
+  clearBrandKitFromDeck: () => void;
+  customTemplates: PersonalSlideTemplate[];
+  saveSlideAsTemplate: (slideIndex: number, name: string, category?: string) => Promise<PersonalSlideTemplate | null>;
+  deleteCustomTemplate: (id: string) => Promise<void>;
+  insertSlideFromTemplate: (template: PersonalSlideTemplate) => void;
+  saveTemplateTargetIndex: number | null;
+  setSaveTemplateTargetIndex: React.Dispatch<React.SetStateAction<number | null>>;
 }
 
 const SlideContext = createContext<SlideContextType | undefined>(undefined);
@@ -276,6 +308,38 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   // Enterprise Design Constitution State & Persistence
   const [constitution, setConstitution] = useState<DesignConstitution>(() => loadDesignConstitution());
 
+  // Brand Kits & Custom Slide Templates State & Persistence
+  const [brandKits, setBrandKits] = useState<BrandKit[]>(() => loadLocalBrandKits());
+  const [activeBrandKitId, setActiveBrandKitIdState] = useState<string | null>(() =>
+    getActiveBrandKitId()
+  );
+  const [customTemplates, setCustomTemplates] = useState<PersonalSlideTemplate[]>(() =>
+    loadLocalCustomTemplates()
+  );
+  const [saveTemplateTargetIndex, setSaveTemplateTargetIndex] = useState<number | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+    syncBrandKitsWithBackend().then((kits) => {
+      if (!mounted) return;
+      setBrandKits(kits);
+      const savedKitId = getActiveBrandKitId();
+      if (savedKitId) {
+        const activeKit = kits.find((k) => k.id === savedKitId);
+        if (activeKit) {
+          setCurrentTheme((prev) => buildThemeFromBrandKit(prev, activeKit));
+        }
+      }
+    });
+    syncCustomTemplatesWithBackend().then((templates) => {
+      if (!mounted) return;
+      setCustomTemplates(templates);
+    });
+    return () => {
+      mounted = false;
+    };
+  }, []);
+
   const updateConstitution = useCallback((updates: Partial<DesignConstitution>) => {
     setConstitution((prev) => {
       const next = { ...prev, ...updates };
@@ -290,6 +354,12 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const displayedTheme = previewTheme || currentTheme;
   const activeSlide = slides[activeSlideIndex] || slides[0];
+
+  useEffect(() => {
+    if (displayedTheme.headingFont) loadGoogleFont(displayedTheme.headingFont);
+    if (displayedTheme.bodyFont) loadGoogleFont(displayedTheme.bodyFont);
+    if (displayedTheme.fontFamily) loadGoogleFont(displayedTheme.fontFamily);
+  }, [displayedTheme.headingFont, displayedTheme.bodyFont, displayedTheme.fontFamily]);
 
   useEffect(() => {
     setSelectedOverlayId(null);
@@ -911,6 +981,138 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     setRagSourceDocumentTitle(null);
   }, []);
 
+  // ==========================================
+  // Brand Kit & Personal Template Actions
+  // ==========================================
+  const saveBrandKit = useCallback(
+    async (kit: BrandKit): Promise<BrandKit> => {
+      const now = Date.now();
+      const normalized: BrandKit = {
+        ...kit,
+        id:
+          kit.id && kit.id.trim()
+            ? kit.id
+            : `bk_${now.toString(36)}_${Math.random().toString(36).slice(2, 6)}`,
+        name: kit.name.trim() || "Corporate Brand Kit",
+        createdAt: kit.createdAt || now,
+        updatedAt: now,
+      };
+      const updatedList = await persistBrandKit(normalized);
+      setBrandKits(updatedList);
+      return normalized;
+    },
+    []
+  );
+
+  const deleteBrandKit = useCallback(async (id: string) => {
+    const updatedList = await removeBrandKit(id);
+    setBrandKits(updatedList);
+    setActiveBrandKitIdState((prev) => (prev === id ? null : prev));
+  }, []);
+
+  const applyBrandKitToDeck = useCallback(
+    async (kit: BrandKit) => {
+      const savedKit = await saveBrandKit(kit);
+      const nextTheme = buildThemeFromBrandKit(currentTheme, savedKit);
+      setCurrentTheme(nextTheme);
+      setActiveBrandKitId(savedKit.id);
+      setActiveBrandKitIdState(savedKit.id);
+
+      const hideOnTitle =
+        Boolean(savedKit.hideLogoOnTitleSlide) ||
+        savedKit.logoPosition === "hidden-on-title";
+
+      // Update slides with brand watermark & harmonize custom theme overrides across the deck
+      setSlidesWithHistory(
+        (prevSlides) =>
+          prevSlides.map((s) => ({
+            ...s,
+            customBg: undefined,
+            customAccentColor: undefined,
+            customAccentSecondary: undefined,
+            customBadgeBg: undefined,
+            customBadgeText: undefined,
+            brandWatermark: {
+              brandKitId: savedKit.id,
+              brandKitName: savedKit.name,
+              logoUrl: savedKit.logoUrl || undefined,
+              logoPosition: savedKit.logoPosition,
+              hideOnTitleSlide: hideOnTitle,
+              headingFont: savedKit.headingFont,
+              bodyFont: savedKit.bodyFont,
+            },
+          })),
+        `Apply Brand Kit: ${savedKit.name}`,
+        activeSlideIndex,
+        true
+      );
+      triggerToast(`Brand Kit "${savedKit.name}" applied across ${slides.length} slides.`);
+    },
+    [currentTheme, saveBrandKit, setSlidesWithHistory, activeSlideIndex, slides.length, triggerToast]
+  );
+
+  const clearBrandKitFromDeck = useCallback(() => {
+    setActiveBrandKitId(null);
+    setActiveBrandKitIdState(null);
+    setCurrentTheme(PRESENTATION_THEMES[0]);
+    setSlidesWithHistory(
+      (prevSlides) =>
+        prevSlides.map((s) => ({
+          ...s,
+          brandWatermark: undefined,
+        })),
+      "Clear Brand Kit from Deck",
+      activeSlideIndex,
+      true
+    );
+    triggerToast("Brand Kit cleared from deck.");
+  }, [setSlidesWithHistory, activeSlideIndex, triggerToast]);
+
+  const saveSlideAsTemplate = useCallback(
+    async (
+      slideIndex: number,
+      name: string,
+      category?: string
+    ): Promise<PersonalSlideTemplate | null> => {
+      const sourceSlide = slides[slideIndex];
+      if (!sourceSlide) return null;
+      const tpl = buildTemplateFromSlide(sourceSlide, name, category);
+      const updatedTemplates = await persistCustomTemplate(tpl);
+      setCustomTemplates(updatedTemplates);
+      triggerToast(`Saved "${tpl.name}" to Personal Template Library.`);
+      return tpl;
+    },
+    [slides, triggerToast]
+  );
+
+  const deleteCustomTemplate = useCallback(
+    async (id: string) => {
+      const updated = await removeCustomTemplate(id);
+      setCustomTemplates(updated);
+      triggerToast("Custom slide template deleted.");
+    },
+    [triggerToast]
+  );
+
+  const insertSlideFromTemplate = useCallback(
+    (template: PersonalSlideTemplate) => {
+      const insertAt = Math.min(slides.length, activeSlideIndex + 1);
+      const newSlide = instantiateSlideFromTemplate(template, insertAt + 1);
+      setSlidesWithHistory(
+        (prev) => {
+          const next = [...prev];
+          next.splice(insertAt, 0, newSlide);
+          return next.map((s, i) => ({ ...s, slideNumber: i + 1 }));
+        },
+        `Insert Template: ${template.name}`,
+        insertAt,
+        true
+      );
+      triggerToast(`Inserted "${template.name}" as Slide #${insertAt + 1}.`);
+    },
+    [slides.length, activeSlideIndex, setSlidesWithHistory, triggerToast]
+  );
+
   // Initial Background RAG Auto-Pilot Check against Intranet Master Document (runs once on startup)
   const hasRunInitialRagRef = useRef<boolean>(false);
   useEffect(() => {
@@ -1023,6 +1225,18 @@ export const SlideProvider: React.FC<{ children: React.ReactNode }> = ({ childre
     constitution,
     setConstitution,
     updateConstitution,
+    brandKits,
+    activeBrandKitId,
+    saveBrandKit,
+    deleteBrandKit,
+    applyBrandKitToDeck,
+    clearBrandKitFromDeck,
+    customTemplates,
+    saveSlideAsTemplate,
+    deleteCustomTemplate,
+    insertSlideFromTemplate,
+    saveTemplateTargetIndex,
+    setSaveTemplateTargetIndex,
   };
 
   return <SlideContext.Provider value={value}>{children}</SlideContext.Provider>;

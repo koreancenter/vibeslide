@@ -373,16 +373,18 @@ function addFrameHeader(
   language: Language,
   slideIdx: number,
   totalSlides: number,
-  fontFace: string
+  fontFace: string,
+  hasTopLeftLogo: boolean = false
 ) {
   const accentHex = toSolidHex(theme.accentColor, "3B82F6");
   const mutedHex = toSolidHex(theme.textMuted, "94A3B8");
   const cardColor = toPptxColor(theme.cardBg, "1E293B");
   const borderColor = toPptxColor(theme.borderColor, "334155");
+  const leftOffset = hasTopLeftLogo ? 1.3 : 0;
 
   // Accent status dot
   pptxSlide.addShape(pptx.ShapeType.ellipse, {
-    x: 0.55,
+    x: 0.55 + leftOffset,
     y: 0.34,
     w: 0.09,
     h: 0.09,
@@ -393,9 +395,9 @@ function addFrameHeader(
   // Category label
   const category = resolveRawText(language, slide.categoryKo, slide.categoryId, slide.categoryJa);
   pptxSlide.addText(category.toUpperCase(), {
-    x: 0.72,
+    x: 0.72 + leftOffset,
     y: 0.25,
-    w: 7.4,
+    w: 7.4 - leftOffset,
     h: 0.26,
     fontFace,
     fontSize: 9,
@@ -492,7 +494,8 @@ function addTitleBlock(
   title: string,
   subtitle: string,
   theme: PresentationTheme,
-  fontFace: string
+  fontFace: string,
+  headingFontFace?: string
 ): number {
   const textHex = toSolidHex(theme.textColor, "F8FAFC");
   const mutedHex = toSolidHex(theme.textMuted, "94A3B8");
@@ -502,7 +505,7 @@ function addTitleBlock(
     y: 0.64,
     w: 8.9,
     h: 0.44,
-    fontFace,
+    fontFace: headingFontFace || fontFace,
     fontSize: 20,
     bold: true,
     color: textHex,
@@ -903,10 +906,11 @@ export async function exportSlidesToPptx(options: ExportPptxOptions): Promise<st
   pptx.subject = deckTitle;
   pptx.author = "AI Slide Builder";
 
-  const baseFont = resolveFontFamily(rawTheme.fontFamily);
+  const baseHeadingFont = resolveFontFamily(rawTheme.headingFont || rawTheme.fontFamily);
+  const baseBodyFont = resolveFontFamily(rawTheme.bodyFont || rawTheme.fontFamily);
   pptx.theme = {
-    headFontFace: baseFont,
-    bodyFontFace: baseFont,
+    headFontFace: baseHeadingFont,
+    bodyFontFace: baseBodyFont,
   };
 
   const total = slides.length;
@@ -924,7 +928,26 @@ export async function exportSlidesToPptx(options: ExportPptxOptions): Promise<st
       badgeText: slide.customBadgeText || accessibleBase.badgeText,
     };
 
-    const fontFace = resolveFontFamily(theme.fontFamily);
+    const bodyFontFace = resolveFontFamily(
+      slide.brandWatermark?.bodyFont || theme.bodyFont || theme.fontFamily
+    );
+    const headingFontFace = resolveFontFamily(
+      slide.brandWatermark?.headingFont || theme.headingFont || bodyFontFace
+    );
+    const fontFace = bodyFontFace;
+
+    const brandLogoUrl = slide.brandWatermark?.logoUrl ?? theme.brandLogoUrl;
+    const rawLogoPos =
+      slide.brandWatermark?.logoPosition ?? theme.brandLogoPosition ?? "top-right";
+    const hideLogoOnTitle =
+      Boolean(slide.brandWatermark?.hideOnTitleSlide) ||
+      Boolean(theme.hideLogoOnTitleSlide) ||
+      rawLogoPos === "hidden-on-title";
+    const shouldRenderBrandLogo =
+      Boolean(brandLogoUrl && isSafeImageUrl(brandLogoUrl)) &&
+      !(slide.layout === "cover" && hideLogoOnTitle);
+    const hasTopLeftLogo = shouldRenderBrandLogo && rawLogoPos === "top-left";
+
     const pptxSlide = pptx.addSlide();
 
     const bgColor = toPptxColor(theme.canvasBg || theme.bgColor, "0F172A");
@@ -1036,7 +1059,7 @@ export async function exportSlidesToPptx(options: ExportPptxOptions): Promise<st
         y: 1.88,
         w: 8.7,
         h: 1.45,
-        fontFace,
+        fontFace: headingFontFace,
         fontSize: 32,
         bold: true,
         color: textHex,
@@ -1187,7 +1210,7 @@ export async function exportSlidesToPptx(options: ExportPptxOptions): Promise<st
         y: cardY + 0.18,
         w: 6.35,
         h: 0.56,
-        fontFace,
+        fontFace: headingFontFace,
         fontSize: 22,
         bold: true,
         color: "FFFFFF",
@@ -1234,8 +1257,15 @@ export async function exportSlidesToPptx(options: ExportPptxOptions): Promise<st
     // STANDARD CONTENT LAYOUTS
     // ------------------------------------------------------------------
     else {
-      addFrameHeader(pptxSlide, pptx, slide, theme, language, i, total, fontFace);
-      const contentTop = addTitleBlock(pptxSlide, currentTitle, currentSubtitle, theme, fontFace);
+      addFrameHeader(pptxSlide, pptx, slide, theme, language, i, total, fontFace, hasTopLeftLogo);
+      const contentTop = addTitleBlock(
+        pptxSlide,
+        currentTitle,
+        currentSubtitle,
+        theme,
+        fontFace,
+        headingFontFace
+      );
       const hasCallout = Boolean(currentCallout);
       const contentBottom = hasCallout ? 4.56 : 5.06;
       const contentH = contentBottom - contentTop;
@@ -1967,6 +1997,35 @@ export async function exportSlidesToPptx(options: ExportPptxOptions): Promise<st
       }
 
       addFrameFooter(pptxSlide, pptx, slide, theme, fontFace);
+    }
+
+    // ------------------------------------------------------------------
+    // BRAND KIT LOGO WATERMARK
+    // ------------------------------------------------------------------
+    if (shouldRenderBrandLogo && brandLogoUrl) {
+      const logoDataUri = await loadImageAsDataUri(brandLogoUrl);
+      if (logoDataUri) {
+        let lx = 7.42;
+        let ly = 0.21;
+        if (rawLogoPos === "top-left") {
+          lx = slide.layout === "cover" ? 0.65 : 0.55;
+          ly = slide.layout === "cover" ? 0.16 : 0.19;
+        } else if (rawLogoPos === "bottom-right") {
+          lx = slide.layout === "cover" ? 8.15 : 8.25;
+          ly = slide.layout === "cover" ? 4.46 : 4.76;
+        } else {
+          lx = slide.layout === "cover" ? 8.15 : 7.42;
+          ly = slide.layout === "cover" ? 0.48 : 0.21;
+        }
+        pptxSlide.addImage({
+          data: logoDataUri,
+          x: lx,
+          y: ly,
+          w: 1.2,
+          h: 0.32,
+          sizing: { type: "contain", w: 1.2, h: 0.32 },
+        });
+      }
     }
 
     // ------------------------------------------------------------------
